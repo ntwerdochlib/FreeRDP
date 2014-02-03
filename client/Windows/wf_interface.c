@@ -10,7 +10,7 @@
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *     http://www.apache.org/licenses/LICENSE-2.0
+ *	 http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -50,6 +50,7 @@
 #include <freerdp/client/cmdline.h>
 #include <freerdp/client/channels.h>
 #include <freerdp/channels/channels.h>
+#include <freerdp/event.h>
 
 #include "wf_gdi.h"
 #include "wf_graphics.h"
@@ -332,6 +333,7 @@ BOOL wf_post_connect(freerdp* instance)
 	rdpContext* context;
 	WCHAR lpWindowName[64];
 	rdpSettings* settings;
+	EmbedWindowEventArgs e;
 
 	settings = instance->settings;
 	context = instance->context;
@@ -389,6 +391,9 @@ BOOL wf_post_connect(freerdp* instance)
 	else
 		_snwprintf(lpWindowName, ARRAYSIZE(lpWindowName), L"FreeRDP: %S:%d", settings->ServerHostname, settings->ServerPort);
 
+	if (settings->EmbeddedWindow)
+		settings->Decorations = FALSE;
+	
 	if (!settings->Decorations)
 		dwStyle = WS_CHILD | WS_BORDER;
 	else
@@ -399,7 +404,7 @@ BOOL wf_post_connect(freerdp* instance)
 		wfc->hwnd = CreateWindowEx((DWORD) NULL, wfc->wndClassName, lpWindowName, dwStyle,
 			0, 0, 0, 0, wfc->hWndParent, NULL, wfc->hInstance, NULL);
 
-		SetWindowLongPtr(wfc->hwnd, GWLP_USERDATA, (LONG_PTR) wfc);
+		SetWindowLongPtr(wfc->hwnd, GWLP_USERDATA, (LONG_PTR) wfc);	   
 	}
 
 	wf_resize_window(wfc);
@@ -409,6 +414,11 @@ BOOL wf_post_connect(freerdp* instance)
 	BitBlt(wfc->primary->hdc, 0, 0, wfc->width, wfc->height, NULL, 0, 0, BLACKNESS);
 	wfc->drawing = wfc->primary;
 
+	EventArgsInit(&e, "wfreerdp");
+	e.embed = FALSE;
+	e.handle = (void*) wfc->hwnd;
+	PubSub_OnEmbedWindow(context->pubSub, context, &e);		   
+	
 	ShowWindow(wfc->hwnd, SW_SHOWNORMAL);
 	UpdateWindow(wfc->hwnd);
 
@@ -717,12 +727,26 @@ int wf_receive_channel_data(freerdp* instance, int channelId, BYTE* data, int si
 
 void wf_process_channel_event(rdpChannels* channels, freerdp* instance)
 {
+	wfContext* wfc;
 	wMessage* event;
 
+	wfc = (wfContext*) instance->context;
 	event = freerdp_channels_pop_event(channels);
 
 	if (event)
+	{
+		switch (GetMessageClass(event->id))
+		{
+			case CliprdrChannel_Class:
+				wf_process_cliprdr_event(wfc, event);
+				break;
+
+			default:
+				break;
+		}
+
 		freerdp_event_free(event);
+	}
 }
 
 BOOL wf_get_fds(freerdp* instance, void** rfds, int* rcount, void** wfds, int* wcount)
@@ -948,6 +972,8 @@ int freerdp_client_focus_out(wfContext* wfc)
 
 int freerdp_client_set_window_size(wfContext* wfc, int width, int height)
 {
+	fprintf(stderr, "freerdp_client_set_window_size %d, %d", width, height);
+	
 	if ((width != wfc->client_width) || (height != wfc->client_height))
 	{
 		PostThreadMessage(wfc->mainThreadId, WM_SIZE, SIZE_RESTORED, ((UINT) height << 16) | (UINT) width);
@@ -956,19 +982,19 @@ int freerdp_client_set_window_size(wfContext* wfc, int width, int height)
 	return 0;
 }
 
-void wf_on_param_change(freerdp* instance, int id)
+void wf_ParamChangeEventHandler(rdpContext* context, ParamChangeEventArgs* e)
 {
 	RECT rect;
 	HMENU hMenu;
-	wfContext* wfc = (wfContext*) instance->context;
+	wfContext* wfc = (wfContext*) context;
 
 	// specific processing here
-	switch (id)
+	switch (e->id)
 	{
 		case FreeRDP_SmartSizing:
 			fprintf(stderr, "SmartSizing changed.\n");
 
-			if (!instance->settings->SmartSizing && (wfc->client_width > instance->settings->DesktopWidth || wfc->client_height > instance->settings->DesktopHeight))
+			if (!context->settings->SmartSizing && (wfc->client_width > context->settings->DesktopWidth || wfc->client_height > context->settings->DesktopHeight))
 			{
 				GetWindowRect(wfc->hwnd, &rect);
 				SetWindowPos(wfc->hwnd, HWND_TOP, 0, 0, MIN(wfc->client_width + wfc->offset_x, rect.right - rect.left), MIN(wfc->client_height + wfc->offset_y, rect.bottom - rect.top), SWP_NOMOVE | SWP_FRAMECHANGED);
@@ -976,7 +1002,7 @@ void wf_on_param_change(freerdp* instance, int id)
 			}
 
 			hMenu = GetSystemMenu(wfc->hwnd, FALSE);
-			CheckMenuItem(hMenu, SYSCOMMAND_ID_SMARTSIZING, instance->settings->SmartSizing);
+			CheckMenuItem(hMenu, SYSCOMMAND_ID_SMARTSIZING, context->settings->SmartSizing);
 			wf_size_scrollbars(wfc, wfc->client_width, wfc->client_height);
 			GetClientRect(wfc->hwnd, &rect);
 			InvalidateRect(wfc->hwnd, &rect, TRUE);
@@ -1206,6 +1232,8 @@ int wfreerdp_client_new(freerdp* instance, rdpContext* context)
 	wfc->instance = instance;
 	context->channels = freerdp_channels_new();
 
+	PubSub_SubscribeParamChange(context->pubSub, wf_ParamChangeEventHandler);
+	
 	return 0;
 }
 

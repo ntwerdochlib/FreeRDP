@@ -52,10 +52,11 @@ include(ComplexLibrary)
 include(FeatureSummary)
 include(CheckCCompilerFlag)
 include(GNUInstallDirsWrapper)
+include(CMakePackageConfigHelpers)
 
 # Soname versioning
 set(FREERDP_VERSION_MAJOR "1")
-set(FREERDP_VERSION_MINOR "1")
+set(FREERDP_VERSION_MINOR "2")
 set(FREERDP_VERSION_REVISION "0")
 set(FREERDP_VERSION_SUFFIX "beta1")
 set(FREERDP_API_VERSION "${FREERDP_VERSION_MAJOR}.${FREERDP_VERSION_MINOR}")
@@ -68,11 +69,11 @@ endif()
 
 # Allow to search the host machine for git
 if(ANDROID OR IOS)
-	SET(CMAKE_FIND_ROOT_PATH_MODE_PROGRAM NEVER, BOTH)
+	SET(CMAKE_FIND_ROOT_PATH_MODE_PROGRAM BOTH)
 endif(ANDROID OR IOS)
 include(GetGitRevisionDescription)
 if(ANDROID OR IOS)
-	SET(CMAKE_FIND_ROOT_PATH_MODE_PROGRAM NEVER, ONLY)
+	SET(CMAKE_FIND_ROOT_PATH_MODE_PROGRAM ONLY)
 endif(ANDROID OR IOS)
 
 git_describe(GIT_REVISION --match "[0-9]*" --abbrev=4 --tags --always)
@@ -174,7 +175,7 @@ if(CMAKE_COMPILER_IS_GNUCC)
 endif()
 
 if("${CMAKE_C_COMPILER_ID}" STREQUAL "Clang")
-	set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Weverything -Wno-unused-parameter")
+	set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wno-unused-parameter")
 	set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wno-unused-macros -Wno-padded")
 	set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wno-c11-extensions -Wno-gnu")
 	if(WITH_SSE2)
@@ -283,7 +284,11 @@ endif(APPLE)
 if(ANDROID)
 	if("${CMAKE_BUILD_TYPE}" STREQUAL "Debug")
 		add_definitions(-DNDK_DEBUG=1)
-		set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${CMAKE_C_FLAGS_DEBUG}")
+
+		# NOTE: Manually add -gdwarf-3, as newer toolchains default to -gdwarf-4,
+		#       which is not supported by the gdbserver binary shipped with
+		#       the android NDK (tested with r9b)
+		set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${CMAKE_C_FLAGS_DEBUG} -gdwarf-3")
 	endif()
 	set(CMAKE_C_LINK_FLAGS "${CMAKE_C_LINK_FLAGS} -llog")
 	if (NOT FREERDP_ANDROID_EXTERNAL_SSL_PATH)
@@ -304,9 +309,13 @@ if(ANDROID)
 	endif()
 endif()
 	set(CMAKE_FIND_ROOT_PATH ${CMAKE_FIND_ROOT_PATH} ${FREERDP_ANDROID_EXTERNAL_SSL_PATH})
-	set(LIBRARY_OUTPUT_PATH ${PROJECT_BINARY_DIR}/client/Android/FreeRDPCore/libs/${ANDROID_ABI})
-	CONFIGURE_FILE(${CMAKE_CURRENT_SOURCE_DIR}/scripts/regenerate_jni_headers.sh.cmake
-		${CMAKE_CURRENT_SOURCE_DIR}/scripts/regenerate_jni_headers.sh @ONLY)
+	set(LIBRARY_OUTPUT_PATH ${PROJECT_BINARY_DIR}/client/Android/FreeRDPCore/jni/${ANDROID_ABI})
+	CONFIGURE_FILE(${CMAKE_SOURCE_DIR}/scripts/regenerate_jni_headers.sh.cmake
+		${CMAKE_BINARY_DIR}/scripts/regenerate_jni_headers.sh @ONLY)
+	if (WITH_GPROF)
+		CONFIGURE_FILE(${CMAKE_SOURCE_DIR}/scripts/gprof_generate.sh.cmake ${CMAKE_BINARY_DIR}/scripts/gprof_generate.sh @ONLY)
+	endif(WITH_GPROF)
+
 endif()
 
 set(CMAKE_THREAD_PREFER_PTHREAD TRUE)
@@ -314,6 +323,11 @@ set(CMAKE_THREAD_PREFER_PTHREAD TRUE)
 if(NOT IOS AND NOT ANDROID)
 	find_package(Threads REQUIRED)
 endif()
+
+list(APPEND CMAKE_REQUIRED_DEFINITIONS -D_GNU_SOURCE)
+check_library_exists(pthread pthread_tryjoin_np "" HAVE_PTHREAD_GNU_EXT)
+list(REMOVE_ITEM CMAKE_REQUIRED_DEFINITIONS -D_GNU_SOURCE)
+
 
 if(UNIX OR CYGWIN)
 	check_include_files(sys/eventfd.h HAVE_AIO_H)
@@ -481,6 +495,7 @@ set(FREERDP_EXTENSION_PATH "${CMAKE_INSTALL_FULL_LIBDIR}/freerdp/extensions")
 
 # Include directories
 include_directories(${CMAKE_CURRENT_BINARY_DIR})
+include_directories(${CMAKE_CURRENT_BINARY_DIR}/include)
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/include)
 
 # Configure files
@@ -568,6 +583,31 @@ endif()
 
 if(WITH_SERVER)
 	add_subdirectory(server)
+endif()
+
+# Exporting
+
+if(${CMAKE_VERSION} VERSION_GREATER "2.8.10")
+
+	export(PACKAGE freerdp)
+
+	set(FREERDP_CMAKE_INSTALL_DIR "${CMAKE_INSTALL_LIBDIR}/cmake/FreeRDP")
+
+	set(FREERDP_INCLUDE_DIR "include")
+	set(FREERDP_MONOLITHIC_BUILD ${MONOLITHIC_BUILD})
+
+	configure_package_config_file(FreeRDPConfig.cmake.in ${CMAKE_CURRENT_BINARY_DIR}/FreeRDPConfig.cmake
+		INSTALL_DESTINATION ${FREERDP_CMAKE_INSTALL_DIR}
+		PATH_VARS FREERDP_INCLUDE_DIR FREERDP_MONOLITHIC_BUILD)
+
+	write_basic_package_version_file(${CMAKE_CURRENT_BINARY_DIR}/FreeRDPConfigVersion.cmake
+		VERSION ${FREERDP_VERSION} COMPATIBILITY SameMajorVersion)
+
+	install(FILES ${CMAKE_CURRENT_BINARY_DIR}/FreeRDPConfig.cmake ${CMAKE_CURRENT_BINARY_DIR}/FreeRDPConfigVersion.cmake
+		DESTINATION ${FREERDP_CMAKE_INSTALL_DIR})
+
+	install(EXPORT FreeRDPTargets DESTINATION ${FREERDP_CMAKE_INSTALL_DIR})
+
 endif()
 
 # Packaging

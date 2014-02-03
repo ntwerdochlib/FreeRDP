@@ -226,43 +226,43 @@ BOOL freerdp_client_rdp_file_set_string(rdpFile* file, char* name, char* value)
 #endif
 
 	if (_stricmp(name, "username") == 0)
-		file->Username = value;
+		file->Username = _strdup(value);
 	else if (_stricmp(name, "domain") == 0)
-		file->Domain = value;
+		file->Domain = _strdup(value);
 	else if (_stricmp(name, "full address") == 0)
-		file->FullAddress = value;
+		file->FullAddress = _strdup(value);
 	else if (_stricmp(name, "alternate full address") == 0)
-		file->AlternateFullAddress = value;
+		file->AlternateFullAddress = _strdup(value);
 	else if (_stricmp(name, "usbdevicestoredirect") == 0)
-		file->UsbDevicesToRedirect = value;
+		file->UsbDevicesToRedirect = _strdup(value);
 	else if (_stricmp(name, "loadbalanceinfo") == 0)
-		file->LoadBalanceInfo = value;
+		file->LoadBalanceInfo = _strdup(value);
 	else if (_stricmp(name, "remoteapplicationname") == 0)
-		file->RemoteApplicationName = value;
+		file->RemoteApplicationName = _strdup(value);
 	else if (_stricmp(name, "remoteapplicationicon") == 0)
-		file->RemoteApplicationIcon = value;
+		file->RemoteApplicationIcon = _strdup(value);
 	else if (_stricmp(name, "remoteapplicationprogram") == 0)
-		file->RemoteApplicationProgram = value;
+		file->RemoteApplicationProgram = _strdup(value);
 	else if (_stricmp(name, "remoteapplicationfile") == 0)
-		file->RemoteApplicationFile = value;
+		file->RemoteApplicationFile = _strdup(value);
 	else if (_stricmp(name, "remoteapplicationguid") == 0)
-		file->RemoteApplicationGuid = value;
+		file->RemoteApplicationGuid = _strdup(value);
 	else if (_stricmp(name, "remoteapplicationcmdline") == 0)
-		file->RemoteApplicationCmdLine = value;
+		file->RemoteApplicationCmdLine = _strdup(value);
 	else if (_stricmp(name, "alternate shell") == 0)
-		file->AlternateShell = value;
+		file->AlternateShell = _strdup(value);
 	else if (_stricmp(name, "shell working directory") == 0)
-		file->ShellWorkingDirectory = value;
+		file->ShellWorkingDirectory = _strdup(value);
 	else if (_stricmp(name, "gatewayhostname") == 0)
-		file->GatewayHostname = value;
+		file->GatewayHostname = _strdup(value);
 	else if (_stricmp(name, "kdcproxyname") == 0)
-		file->KdcProxyName = value;
+		file->KdcProxyName = _strdup(value);
 	else if (_stricmp(name, "drivestoredirect") == 0)
-		file->DrivesToRedirect = value;
+		file->DrivesToRedirect = _strdup(value);
 	else if (_stricmp(name, "devicestoredirect") == 0)
-		file->DevicesToRedirect = value;
+		file->DevicesToRedirect = _strdup(value);
 	else if (_stricmp(name, "winposstr") == 0)
-		file->WinPosStr = value;
+		file->WinPosStr = _strdup(value);
 	else
 		return FALSE;
 
@@ -297,10 +297,10 @@ void freerdp_client_parse_rdp_file_string_unicode(rdpFile* file, WCHAR* name, WC
 	WideCharToMultiByte(CP_UTF8, 0, value, length, valueA, length, NULL, NULL);
 	valueA[length] = '\0';
 
-	if (!freerdp_client_rdp_file_set_string(file, nameA, valueA))
-		free(valueA);
+	freerdp_client_rdp_file_set_string(file, nameA, valueA);
 
 	free(nameA);
+	free(valueA);
 }
 
 void freerdp_client_parse_rdp_file_string_ascii(rdpFile* file, char* name, char* value)
@@ -481,6 +481,7 @@ BOOL freerdp_client_parse_rdp_file_buffer(rdpFile* file, BYTE* buffer, size_t si
 
 BOOL freerdp_client_parse_rdp_file(rdpFile* file, const char* name)
 {
+	BOOL status;
 	BYTE* buffer;
 	FILE* fp = NULL;
 	size_t read_size;
@@ -521,11 +522,15 @@ BOOL freerdp_client_parse_rdp_file(rdpFile* file, const char* name)
 	buffer[file_size] = '\0';
 	buffer[file_size + 1] = '\0';
 
-	return freerdp_client_parse_rdp_file_buffer(file, buffer, file_size);
+	status = freerdp_client_parse_rdp_file_buffer(file, buffer, file_size);
+
+	free(buffer);
+
+	return status;
 }
 
-#define WRITE_ALL_SETTINGS FALSE
-#define SETTING_MODIFIED(_settings, _field) (WRITE_ALL_SETTINGS || _settings->settings_modified[FreeRDP_##_field])
+#define WRITE_ALL_SETTINGS TRUE
+#define SETTING_MODIFIED(_settings, _field) (WRITE_ALL_SETTINGS || _settings->SettingsModified[FreeRDP_##_field])
 #define SETTING_MODIFIED_SET(_target, _settings, _field) if SETTING_MODIFIED(_settings, _field) _target = _settings->_field
 
 BOOL freerdp_client_populate_rdp_file_from_settings(rdpFile* file, rdpSettings* settings)
@@ -832,6 +837,10 @@ BOOL freerdp_client_populate_settings_from_rdp_file(rdpFile* file, rdpSettings* 
 
 		if (file->GatewayUsageMethod == TSC_PROXY_MODE_DIRECT)
 			freerdp_set_param_bool(settings, FreeRDP_GatewayEnabled, TRUE);
+		else if (file->GatewayUsageMethod == TSC_PROXY_MODE_DETECT)
+			freerdp_set_param_bool(settings, FreeRDP_GatewayEnabled, TRUE);
+		else if (file->GatewayUsageMethod == TSC_PROXY_MODE_DEFAULT)
+			freerdp_set_param_bool(settings, FreeRDP_GatewayEnabled, TRUE);
 		else if (file->GatewayUsageMethod == TSC_PROXY_MODE_NONE_DETECT)
 			freerdp_set_param_bool(settings, FreeRDP_GatewayEnabled, FALSE);
 	}
@@ -956,10 +965,16 @@ BOOL freerdp_client_populate_settings_from_rdp_file(rdpFile* file, rdpSettings* 
 
 	if (file->argc > 1)
 	{
-		freerdp_client_parse_command_line_arguments(file->argc, file->argv, settings);
+		freerdp_client_settings_parse_command_line(settings, file->argc, file->argv);
 	}
 
 	return TRUE;
+}
+
+void freerdp_client_file_string_check_free(LPSTR str)
+{
+	if (~((size_t) str))
+		free(str);
 }
 
 rdpFile* freerdp_client_rdp_file_new()
@@ -995,6 +1010,26 @@ void freerdp_client_rdp_file_free(rdpFile* file)
 
 			free(file->argv);
 		}
+
+		freerdp_client_file_string_check_free(file->Username);
+		freerdp_client_file_string_check_free(file->Domain);
+		freerdp_client_file_string_check_free(file->FullAddress);
+		freerdp_client_file_string_check_free(file->AlternateFullAddress);
+		freerdp_client_file_string_check_free(file->UsbDevicesToRedirect);
+		freerdp_client_file_string_check_free(file->LoadBalanceInfo);
+		freerdp_client_file_string_check_free(file->RemoteApplicationName);
+		freerdp_client_file_string_check_free(file->RemoteApplicationIcon);
+		freerdp_client_file_string_check_free(file->RemoteApplicationProgram);
+		freerdp_client_file_string_check_free(file->RemoteApplicationFile);
+		freerdp_client_file_string_check_free(file->RemoteApplicationGuid);
+		freerdp_client_file_string_check_free(file->RemoteApplicationCmdLine);
+		freerdp_client_file_string_check_free(file->AlternateShell);
+		freerdp_client_file_string_check_free(file->ShellWorkingDirectory);
+		freerdp_client_file_string_check_free(file->GatewayHostname);
+		freerdp_client_file_string_check_free(file->KdcProxyName);
+		freerdp_client_file_string_check_free(file->DrivesToRedirect);
+		freerdp_client_file_string_check_free(file->DevicesToRedirect);
+		freerdp_client_file_string_check_free(file->WinPosStr);
 
 		free(file);
 	}

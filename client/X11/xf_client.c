@@ -51,6 +51,8 @@
 #include <X11/extensions/Xrender.h>
 #endif
 
+#define WITH_AUTORECONNECT
+
 #include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -728,8 +730,12 @@ static void xf_post_disconnect(freerdp *instance)
 	assert(NULL != xfc);
 	assert(NULL != instance->settings);
 
-	WaitForSingleObject(xfc->mutex, INFINITE);
-	CloseHandle(xfc->mutex);
+	if (xfc->mutex)
+	{
+		WaitForSingleObject(xfc->mutex, INFINITE);
+		CloseHandle(xfc->mutex);
+		xfc->mutex = NULL;
+	}
 
 	xf_monitors_free(xfc, instance->settings);
 }
@@ -750,12 +756,40 @@ BOOL xf_pre_connect(freerdp* instance)
 	rdpSettings* settings;
 	xfContext* xfc = (xfContext*) instance->context;
 
-	xfc->mutex = CreateMutex(NULL, FALSE, NULL);
 	xfc->settings = instance->settings;
 	xfc->instance = instance;
 
 	settings = instance->settings;
 	channels = instance->context->channels;
+
+	xfc->UseXThreads = TRUE;
+
+	if (xfc->UseXThreads)
+	{
+		if (!XInitThreads())
+		{
+			fprintf(stderr, "warning: XInitThreads() failure\n");
+			xfc->UseXThreads = FALSE;
+		}
+	}
+
+	xfc->display = XOpenDisplay(NULL);
+
+	if (!xfc->display)
+	{
+		fprintf(stderr, "xf_pre_connect: failed to open display: %s\n", XDisplayName(NULL));
+		fprintf(stderr, "Please check that the $DISPLAY environment variable is properly set.\n");
+		return FALSE;
+	}
+
+	if (xfc->debug)
+	{
+		fprintf(stderr, "Enabling X11 debug mode.\n");
+		XSynchronize(xfc->display, TRUE);
+		_def_error_handler = XSetErrorHandler(_xf_error_handler);
+	}
+
+	xfc->mutex = CreateMutex(NULL, FALSE, NULL);
 
 	PubSub_SubscribeChannelConnected(instance->context->pubSub,
 			(pChannelConnectedEventHandler) xf_OnChannelConnectedEventHandler);
@@ -783,33 +817,6 @@ BOOL xf_pre_connect(freerdp* instance)
 		fprintf(stderr, "%s:%d: Authentication only. Don't connect to X.\n", __FILE__, __LINE__);
 		/* Avoid XWindows initialization and configuration below. */
 		return TRUE;
-	}
-
-	xfc->UseXThreads = TRUE;
-
-	if (xfc->UseXThreads)
-	{
-		if (!XInitThreads())
-		{
-			fprintf(stderr, "warning: XInitThreads() failure\n");
-			xfc->UseXThreads = FALSE;
-		}
-	}
-
-	xfc->display = XOpenDisplay(NULL);
-
-	if (!xfc->display)
-	{
-		fprintf(stderr, "xf_pre_connect: failed to open display: %s\n", XDisplayName(NULL));
-		fprintf(stderr, "Please check that the $DISPLAY environment variable is properly set.\n");
-		return FALSE;
-	}
-
-	if (xfc->debug)
-	{
-		fprintf(stderr, "Enabling X11 debug mode.\n");
-		XSynchronize(xfc->display, TRUE);
-		_def_error_handler = XSetErrorHandler(_xf_error_handler);
 	}
 
 	xfc->_NET_WM_ICON = XInternAtom(xfc->display, "_NET_WM_ICON", False);
@@ -937,6 +944,10 @@ BOOL xf_post_connect(freerdp* instance)
 	xf_create_window(xfc);
 
 	ZeroMemory(&gcv, sizeof(gcv));
+
+	if (xfc->modifier_map)
+		XFreeModifiermap(xfc->modifier_map);
+
 	xfc->modifier_map = XGetModifierMapping(xfc->display);
 
 	xfc->gc = XCreateGC(xfc->display, xfc->drawable, GCGraphicsExposures, &gcv);
@@ -1327,6 +1338,51 @@ void* xf_channels_thread(void* arg)
 	return NULL;
 }
 
+#ifdef WITH_AUTORECONNECT
+BOOL xf_auto_reconnect(freerdp* instance)
+{
+	xfContext* xfc = (xfContext*)instance->context;
+
+	UINT32 num_retries = 0;
+	UINT32 max_retries = instance->settings->AutoReconnectMaxRetries;
+
+	/* Only auto reconnect on network disconnects. */
+	if (freerdp_error_info(instance) != 0) return FALSE;
+
+	/* A network disconnect was detected */
+	fprintf(stderr, "Network disconnect!\n");
+	if (!instance->settings->AutoReconnectionEnabled)
+	{
+		/* No auto-reconnect - just quit */
+		return FALSE;
+	}
+
+	/* Perform an auto-reconnect. */
+	for (;;)
+	{
+		/* Quit retrying if max retries has been exceeded */
+		if (num_retries++ >= max_retries)
+		{
+			return FALSE;
+		}
+
+		/* Attempt the next reconnect */
+		fprintf(stderr, "Attempting reconnect (%u of %u)\n", num_retries, max_retries);
+		if (freerdp_reconnect(instance))
+		{
+			xfc->disconnect = FALSE;
+			return TRUE;
+		}
+
+		sleep(5);
+	}
+
+	fprintf(stderr, "Maximum reconnect retries exceeded\n");
+
+	return FALSE;
+}
+#endif
+
 /** Main loop for the rdp connection.
  *  It will be run from the thread's entry point (thread_func()).
  *  It initiates the connection, and will continue to run until the session ends,
@@ -1373,6 +1429,11 @@ void* xf_thread(void* param)
 	ZeroMemory(wfds, sizeof(wfds));
 	ZeroMemory(&timeout, sizeof(struct timeval));
 
+#ifdef WITH_AUTORECONNECT
+	instance->settings->AutoReconnectionEnabled = TRUE;
+	instance->settings->AutoReconnectMaxRetries = 20;
+#endif
+
 	status = freerdp_connect(instance);
 
 	xfc = (xfContext*) instance->context;
@@ -1388,6 +1449,15 @@ void* xf_thread(void* param)
 
 	if (!status)
 	{
+		if (xfc->mutex)
+		{
+			WaitForSingleObject(xfc->mutex, INFINITE);
+			CloseHandle(xfc->mutex);
+			xfc->mutex = NULL;
+		}
+
+		xf_monitors_free(xfc, instance->settings);
+
 		exit_code = XF_EXIT_CONN_FAILED;
 		ExitThread(exit_code);
 	}
@@ -1508,6 +1578,9 @@ void* xf_thread(void* param)
 		{
 			if (freerdp_check_fds(instance) != TRUE)
 			{
+#ifdef WITH_AUTORECONNECT
+				if (xf_auto_reconnect(instance)) continue;
+#endif
 				fprintf(stderr, "Failed to check FreeRDP file descriptor\n");
 				break;
 			}
@@ -1754,6 +1827,7 @@ static int xfreerdp_client_stop(rdpContext* context)
 	xfContext* xfc = (xfContext*) context;
 
 	assert(NULL != context);
+
 	if (context->settings->AsyncInput)
 	{
 		wMessageQueue* queue;
@@ -1827,7 +1901,6 @@ static int xfreerdp_client_new(freerdp* instance, rdpContext* context)
 	PubSub_SubscribeTerminate(context->pubSub, (pTerminateEventHandler) xf_TerminateEventHandler);
 	PubSub_SubscribeParamChange(context->pubSub, (pParamChangeEventHandler) xf_ParamChangeEventHandler);
 	PubSub_SubscribeScalingFactorChange(context->pubSub, (pScalingFactorChangeEventHandler) xf_ScalingFactorChangeEventHandler);
-
 
 	return 0;
 }

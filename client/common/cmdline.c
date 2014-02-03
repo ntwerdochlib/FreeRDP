@@ -29,10 +29,12 @@
 #include <freerdp/addin.h>
 #include <freerdp/settings.h>
 #include <freerdp/client/channels.h>
+#include <freerdp/crypto/crypto.h>
 #include <freerdp/locale/keyboard.h>
 #include <freerdp/utils/debug.h>
 
 #include <freerdp/client/cmdline.h>
+#include <freerdp/version.h>
 
 #include "compatibility.h"
 
@@ -51,6 +53,9 @@ COMMAND_LINE_ARGUMENT_A args[] =
 	{ "kbd-subtype", COMMAND_LINE_VALUE_REQUIRED, "<subtype id>", NULL, NULL, -1, NULL, "Keyboard subtype" },
 	{ "kbd-fn-key", COMMAND_LINE_VALUE_REQUIRED, "<function key count>", NULL, NULL, -1, NULL, "Keyboard function key count" },
 	{ "admin", COMMAND_LINE_VALUE_FLAG, NULL, NULL, NULL, -1, "console", "Admin (or console) session" },
+	{ "restricted-admin", COMMAND_LINE_VALUE_FLAG, NULL, NULL, NULL, -1, "restrictedAdmin", "Restricted admin mode" },
+	{ "pth", COMMAND_LINE_VALUE_REQUIRED, "<password hash>", NULL, NULL, -1, "pass-the-hash", "Pass the hash (restricted admin mode)" },
+	{ "client-hostname", COMMAND_LINE_VALUE_REQUIRED, "<name>", NULL, NULL, -1, NULL, "Client Hostname to send to server" },
 	{ "multimon", COMMAND_LINE_VALUE_OPTIONAL, NULL, NULL, NULL, -1, NULL, "Use multiple monitors" },
 	{ "workarea", COMMAND_LINE_VALUE_FLAG, NULL, NULL, NULL, -1, NULL, "Use available work area" },
 	{ "monitors", COMMAND_LINE_VALUE_REQUIRED, "<0,1,2...>", NULL, NULL, -1, NULL, "Select monitors to use" },
@@ -103,6 +108,7 @@ COMMAND_LINE_ARGUMENT_A args[] =
 	{ "themes", COMMAND_LINE_VALUE_BOOL, NULL, BoolValueTrue, NULL, -1, NULL, "Themes" },
 	{ "wallpaper", COMMAND_LINE_VALUE_BOOL, NULL, BoolValueTrue, NULL, -1, NULL, "Wallpaper" },
 	{ "gdi", COMMAND_LINE_VALUE_REQUIRED, "<sw|hw>", NULL, NULL, -1, NULL, "GDI rendering" },
+	{ "gfx", COMMAND_LINE_VALUE_OPTIONAL, NULL, NULL, NULL, -1, NULL, "RDP8 graphics pipeline (experimental)" },
 	{ "rfx", COMMAND_LINE_VALUE_FLAG, NULL, NULL, NULL, -1, NULL, "RemoteFX" },
 	{ "rfx-mode", COMMAND_LINE_VALUE_REQUIRED, "<image|video>", NULL, NULL, -1, NULL, "RemoteFX mode" },
 	{ "frame-ack", COMMAND_LINE_VALUE_REQUIRED, "<number>", NULL, NULL, -1, NULL, "Frame acknowledgement" },
@@ -141,6 +147,8 @@ COMMAND_LINE_ARGUMENT_A args[] =
 	{ "help", COMMAND_LINE_VALUE_FLAG | COMMAND_LINE_PRINT_HELP, NULL, NULL, NULL, -1, "?", "print help" },
 	{ "play-rfx", COMMAND_LINE_VALUE_REQUIRED, "<pcap file>", NULL, NULL, -1, NULL, "Replay rfx pcap file" },
 	{ "auth-only", COMMAND_LINE_VALUE_BOOL, NULL, BoolValueFalse, NULL, -1, NULL, "Authenticate only." },
+	{ "reconnect-cookie", COMMAND_LINE_VALUE_REQUIRED, "<base64 cookie>", NULL, NULL, -1, NULL, "Pass base64 reconnect cookie to the connection" },
+	{ "print-reconnect-cookie", COMMAND_LINE_VALUE_BOOL, NULL, BoolValueFalse, NULL, -1, NULL, "Print base64 reconnect cookie after connecting" },
 	{ NULL, 0, NULL, NULL, NULL, -1, NULL, NULL }
 };
 
@@ -1020,7 +1028,7 @@ BOOL freerdp_client_detect_command_line(int argc, char** argv, DWORD* flags)
 	return compatibility;
 }
 
-int freerdp_client_command_line_status_print(int argc, char** argv, rdpSettings* settings, int status)
+int freerdp_client_settings_command_line_status_print(rdpSettings* settings, int status, int argc, char** argv)
 {
 	COMMAND_LINE_ARGUMENT_A* arg;
 
@@ -1077,7 +1085,7 @@ int freerdp_client_command_line_status_print(int argc, char** argv, rdpSettings*
 	return 0;
 }
 
-int freerdp_client_parse_command_line_arguments(int argc, char** argv, rdpSettings* settings)
+int freerdp_client_settings_parse_command_line_arguments(rdpSettings* settings, int argc, char** argv)
 {
 	char* p;
 	char* str;
@@ -1240,6 +1248,21 @@ int freerdp_client_parse_command_line_arguments(int argc, char** argv, rdpSettin
 		CommandLineSwitchCase(arg, "admin")
 		{
 			settings->ConsoleSession = TRUE;
+		}
+		CommandLineSwitchCase(arg, "restricted-admin")
+		{
+			settings->ConsoleSession = TRUE;
+			settings->RestrictedAdminModeRequired = TRUE;
+		}
+		CommandLineSwitchCase(arg, "pth")
+		{
+			settings->ConsoleSession = TRUE;
+			settings->RestrictedAdminModeRequired = TRUE;
+			settings->PasswordHash = _strdup(arg->Value);
+		}
+		CommandLineSwitchCase(arg, "client-hostname")
+		{
+			settings->ClientHostname = _strdup(arg->Value);
 		}
 		CommandLineSwitchCase(arg, "kbd")
 		{
@@ -1480,6 +1503,10 @@ int freerdp_client_parse_command_line_arguments(int argc, char** argv, rdpSettin
 			else if (strcmp(arg->Value, "hw") == 0)
 				settings->SoftwareGdi = FALSE;
 		}
+		CommandLineSwitchCase(arg, "gfx")
+		{
+			settings->SupportGraphicsPipeline = TRUE;
+		}
 		CommandLineSwitchCase(arg, "rfx")
 		{
 			settings->RemoteFxCodec = TRUE;
@@ -1502,7 +1529,10 @@ int freerdp_client_parse_command_line_arguments(int argc, char** argv, rdpSettin
 		CommandLineSwitchCase(arg, "nsc")
 		{
 			settings->NSCodec = TRUE;
+			settings->FastPathOutput = TRUE;
 			settings->ColorDepth = 32;
+			settings->LargePointerFlag = TRUE;
+			settings->FrameMarkerCommandEnabled = TRUE;
 		}
 		CommandLineSwitchCase(arg, "jpeg")
 		{
@@ -1683,6 +1713,27 @@ int freerdp_client_parse_command_line_arguments(int argc, char** argv, rdpSettin
 		{
 			settings->AuthenticationOnly = arg->Value ? TRUE : FALSE;
 		}
+		CommandLineSwitchCase(arg, "reconnect-cookie")
+		{
+			BYTE *base64;
+			int length;
+			crypto_base64_decode((BYTE *) (arg->Value),
+				(int) strlen(arg->Value), &base64, &length);
+			if ((base64 != NULL) && (length == sizeof(ARC_SC_PRIVATE_PACKET)))
+			{
+				memcpy(settings->ServerAutoReconnectCookie, base64, length);
+				free(base64);
+			}
+			else
+			{
+				fprintf(stderr, "reconnect-cookie:  invalid base64 '%s'\n",
+					arg->Value);
+			}
+		}
+		CommandLineSwitchCase(arg, "print-reconnect-cookie")
+		{
+			settings->PrintReconnectCookie = arg->Value ? TRUE : FALSE;
+		}
 		CommandLineSwitchDefault(arg)
 		{
 		}
@@ -1729,7 +1780,7 @@ int freerdp_client_load_static_channel_addin(rdpChannels* channels, rdpSettings*
 {
 	void* entry;
 
-	entry = freerdp_load_channel_addin_entry(name, NULL, NULL, 0);
+	entry = freerdp_load_channel_addin_entry(name, NULL, NULL, FREERDP_ADDIN_CHANNEL_STATIC);
 
 	if (entry)
 	{
@@ -1828,6 +1879,17 @@ int freerdp_client_load_addins(rdpChannels* channels, rdpSettings* settings)
 	if (settings->RemoteApplicationMode)
 	{
 		freerdp_client_load_static_channel_addin(channels, settings, "rail", settings);
+	}
+
+	if (settings->SupportGraphicsPipeline)
+	{
+		char* p[1];
+		int count;
+
+		count = 1;
+		p[0] = "rdpgfx";
+
+		freerdp_client_add_dynamic_channel(settings, count, p);
 	}
 
 	if (settings->DynamicChannelCount)

@@ -321,10 +321,15 @@ int freerdp_detect_old_command_line_syntax(int argc, char** argv, int* count)
 	ZeroMemory(settings, sizeof(rdpSettings));
 
 	CommandLineClearArgumentsA(old_args);
+
 	status = CommandLineParseArgumentsA(argc, (const char**) argv, old_args, flags, settings,
 			freerdp_client_old_command_line_pre_filter, NULL);
+
 	if (status < 0)
+	{
+		free(settings);
 		return status;
+	}
 
 	arg = old_args;
 
@@ -485,6 +490,7 @@ int freerdp_client_parse_old_command_line_arguments(int argc, char** argv, rdpSe
 		CommandLineSwitchCase(arg, "n")
 		{
 			settings->ClientHostname = _strdup(arg->Value);
+			fprintf(stderr, "-n -> /client-hostname:%s\n", arg->Value);
 		}
 		CommandLineSwitchCase(arg, "o")
 		{

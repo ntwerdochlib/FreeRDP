@@ -26,9 +26,11 @@
 #endif
 
 #include <assert.h>
+#include <errno.h>
 
 #include <winpr/crt.h>
 #include <winpr/synch.h>
+#include <winpr/platform.h>
 
 #include "synch.h"
 #include "../thread/thread.h"
@@ -43,9 +45,110 @@
 
 #ifndef _WIN32
 
+#include <time.h>
+#include <sys/time.h>
+#include <sys/wait.h>
+
 #include "../handle/handle.h"
 
 #include "../pipe/pipe.h"
+
+#ifdef __MACH__
+
+#include <mach/mach_time.h>
+
+#define CLOCK_REALTIME 0
+#define CLOCK_MONOTONIC 0
+
+int clock_gettime(int clk_id, struct timespec *t)
+{
+	UINT64 time;
+	double seconds;
+	double nseconds;
+	mach_timebase_info_data_t timebase;
+
+	mach_timebase_info(&timebase);
+	time = mach_absolute_time();
+
+	nseconds = ((double) time * (double) timebase.numer) / ((double) timebase.denom);
+	seconds = ((double) time * (double) timebase.numer) / ((double) timebase.denom * 1e9);
+
+	t->tv_sec = seconds;
+	t->tv_nsec = nseconds;
+
+	return 0;
+}
+
+#endif
+
+/* Drop in replacement for the linux pthread_timedjoin_np and
+ * pthread_mutex_timedlock functions.
+ */
+#if !defined(HAVE_PTHREAD_GNU_EXT)
+#include <pthread.h>
+
+static long long ts_difftime(struct timespec *o,
+		struct timespec *n)
+{
+	long long old = o->tv_sec * 1000000000LL + o->tv_nsec;
+	long long new = n->tv_sec * 1000000000LL + n->tv_nsec;
+
+	return new - old;
+}
+
+static int pthread_timedjoin_np(pthread_t td, void **res,
+		struct timespec *timeout)
+{
+	struct timespec timenow;
+	struct timespec sleepytime;
+	/* This is just to avoid a completely busy wait */
+	sleepytime.tv_sec = 0;
+	sleepytime.tv_nsec = 10000000; /* 10ms */
+
+	do
+	{
+		if (pthread_kill(td, 0))
+			return pthread_join(td, res);
+
+		nanosleep(&sleepytime, NULL);
+ 
+		clock_gettime(CLOCK_MONOTONIC, &timenow);
+
+		if (ts_difftime(timeout, &timenow) >= 0)
+		{
+			return ETIMEDOUT;
+		}
+	}
+	while (TRUE);
+
+	return ETIMEDOUT;
+}
+
+static int pthread_mutex_timedlock(pthread_mutex_t *mutex, const struct timespec *timeout)
+{
+	struct timespec timenow;
+	struct timespec sleepytime;
+	int retcode;
+
+	/* This is just to avoid a completely busy wait */
+	sleepytime.tv_sec = 0;
+	sleepytime.tv_nsec = 10000000; /* 10ms */
+
+	while ((retcode = pthread_mutex_trylock (mutex)) == EBUSY)
+	{
+		clock_gettime(CLOCK_MONOTONIC, &timenow);
+
+		if (ts_difftime(timeout, &timenow) >= 0)
+		{
+			return ETIMEDOUT;
+		}
+
+		nanosleep (&sleepytime, NULL);
+	}
+
+	return retcode;
+}
+#endif
 
 static void ts_add_ms(struct timespec *ts, DWORD dwMilliseconds)
 {
@@ -79,28 +182,46 @@ DWORD WaitForSingleObject(HANDLE hHandle, DWORD dwMilliseconds)
 		{
 			if (dwMilliseconds != INFINITE)
 			{
-#if HAVE_PTHREAD_GNU_EXT
 				struct timespec timeout;
 
-				clock_gettime(CLOCK_REALTIME, &timeout);
+				/* pthread_timedjoin_np returns ETIMEDOUT in case the timeout is 0,
+				 * so set it to the smallest value to get a proper return value. */
+				if (dwMilliseconds == 0)
+					dwMilliseconds ++;
+
+				clock_gettime(CLOCK_MONOTONIC, &timeout);
 				ts_add_ms(&timeout, dwMilliseconds);
 
 				status = pthread_timedjoin_np(thread->thread, &thread_status, &timeout);
-#else
-				fprintf(stderr, "[ERROR] %s: Thread timeouts not implemented.\n", __func__);
-				assert(0);
-#endif
+
+				if (ETIMEDOUT == status)
+					return WAIT_TIMEOUT;
 			}
 			else
 				status = pthread_join(thread->thread, &thread_status);
 
 			if (status != 0)
+			{
 				fprintf(stderr, "WaitForSingleObject: pthread_join failure: [%d] %s\n",
 						status, strerror(status));
+			}
 
 			if (thread_status)
 				thread->dwExitCode = ((DWORD) (size_t) thread_status);
 		}
+	}
+	else if (Type == HANDLE_TYPE_PROCESS)
+	{
+		WINPR_PROCESS* process;
+
+		process = (WINPR_PROCESS*) Object;
+
+		if (waitpid(process->pid, &(process->status), 0) != -1)
+		{
+			return WAIT_FAILED;
+		}
+
+		process->dwExitCode = (DWORD) process->status;
 	}
 	else if (Type == HANDLE_TYPE_MUTEX)
 	{
@@ -108,21 +229,21 @@ DWORD WaitForSingleObject(HANDLE hHandle, DWORD dwMilliseconds)
 
 		mutex = (WINPR_MUTEX*) Object;
 
-#if HAVE_PTHREAD_GNU_EXT
 		if (dwMilliseconds != INFINITE)
 		{
+			int status;
 			struct timespec timeout;
 
-			clock_gettime(CLOCK_REALTIME, &timeout);
+			clock_gettime(CLOCK_MONOTONIC, &timeout);
 			ts_add_ms(&timeout, dwMilliseconds);	
 
-			pthread_mutex_timedlock(&mutex->mutex, &timeout);
+			status = pthread_mutex_timedlock(&mutex->mutex, &timeout);
+
+			if (ETIMEDOUT == status)
+				return WAIT_TIMEOUT;
 		}
 		else
-#endif
-		{
 			pthread_mutex_lock(&mutex->mutex);
-		}
 	}
 	else if (Type == HANDLE_TYPE_EVENT)
 	{
@@ -245,13 +366,19 @@ DWORD WaitForSingleObject(HANDLE hHandle, DWORD dwMilliseconds)
 	}
 	else if (Type == HANDLE_TYPE_NAMED_PIPE)
 	{
+		int fd;
 		int status;
 		fd_set rfds;
 		struct timeval timeout;
 		WINPR_NAMED_PIPE* pipe = (WINPR_NAMED_PIPE*) Object;
 
+		fd = (pipe->ServerMode) ? pipe->serverfd : pipe->clientfd;
+
+		if (fd == -1)
+			return WAIT_FAILED;
+
 		FD_ZERO(&rfds);
-		FD_SET(pipe->clientfd, &rfds);
+		FD_SET(fd, &rfds);
 		ZeroMemory(&timeout, sizeof(timeout));
 
 		if ((dwMilliseconds != INFINITE) && (dwMilliseconds != 0))
@@ -259,7 +386,7 @@ DWORD WaitForSingleObject(HANDLE hHandle, DWORD dwMilliseconds)
 			timeout.tv_usec = dwMilliseconds * 1000;
 		}
 
-		status = select(pipe->clientfd + 1, &rfds, NULL, NULL,
+		status = select(fd + 1, &rfds, NULL, NULL,
 				(dwMilliseconds == INFINITE) ? NULL : &timeout);
 
 		if (status < 0)
@@ -332,7 +459,10 @@ DWORD WaitForMultipleObjects(DWORD nCount, const HANDLE* lpHandles, BOOL bWaitAl
 		else if (Type == HANDLE_TYPE_NAMED_PIPE)
 		{
 			WINPR_NAMED_PIPE* pipe = (WINPR_NAMED_PIPE*) Object;
-			fd = pipe->clientfd;
+			fd = (pipe->ServerMode) ? pipe->serverfd : pipe->clientfd;
+
+			if (fd == -1)
+				return WAIT_FAILED;
 		}
 		else
 		{
@@ -382,7 +512,7 @@ DWORD WaitForMultipleObjects(DWORD nCount, const HANDLE* lpHandles, BOOL bWaitAl
 		else if (Type == HANDLE_TYPE_NAMED_PIPE)
 		{
 			WINPR_NAMED_PIPE* pipe = (WINPR_NAMED_PIPE*) Object;
-			fd = pipe->clientfd;
+			fd = (pipe->ServerMode) ? pipe->serverfd : pipe->clientfd;
 		}
 
 		if (FD_ISSET(fd, &fds))

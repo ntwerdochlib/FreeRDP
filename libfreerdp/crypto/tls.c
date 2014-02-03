@@ -97,6 +97,14 @@ SecPkgContext_Bindings* tls_get_channel_bindings(X509* cert)
 	return ContextBindings;
 }
 
+static void tls_ssl_info_callback(const SSL* ssl, int type, int val)
+{
+	if (type & SSL_CB_HANDSHAKE_START)
+	{
+
+	}
+}
+
 BOOL tls_connect(rdpTls* tls)
 {
 	CryptoCert cert;
@@ -106,7 +114,7 @@ BOOL tls_connect(rdpTls* tls)
 
 	tls->ctx = SSL_CTX_new(TLSv1_client_method());
 
-	if (tls->ctx == NULL)
+	if (!tls->ctx)
 	{
 		fprintf(stderr, "SSL_CTX_new failed\n");
 		return FALSE;
@@ -147,16 +155,35 @@ BOOL tls_connect(rdpTls* tls)
 
 	tls->ssl = SSL_new(tls->ctx);
 
-	if (tls->ssl == NULL)
+	if (!tls->ssl)
 	{
 		fprintf(stderr, "SSL_new failed\n");
 		return FALSE;
 	}
 
-	if (SSL_set_fd(tls->ssl, tls->sockfd) < 1)
+	if (tls->tsg)
 	{
-		fprintf(stderr, "SSL_set_fd failed\n");
-		return FALSE;
+		tls->bio = BIO_new(tls->methods);
+
+		if (!tls->bio)
+		{
+			fprintf(stderr, "BIO_new failed\n");
+			return FALSE;
+		}
+
+		tls->bio->ptr = tls->tsg;
+
+		SSL_set_bio(tls->ssl, tls->bio, tls->bio);
+
+		SSL_CTX_set_info_callback(tls->ctx, tls_ssl_info_callback);
+	}
+	else
+	{
+		if (SSL_set_fd(tls->ssl, tls->sockfd) < 1)
+		{
+			fprintf(stderr, "SSL_set_fd failed\n");
+			return FALSE;
+		}
 	}
 
 	connection_status = SSL_connect(tls->ssl);
@@ -171,7 +198,7 @@ BOOL tls_connect(rdpTls* tls)
 
 	cert = tls_get_certificate(tls, TRUE);
 
-	if (cert == NULL)
+	if (!cert)
 	{
 		fprintf(stderr, "tls_connect: tls_get_certificate failed to return the server certificate.\n");
 		return FALSE;
@@ -333,6 +360,9 @@ BOOL tls_accept(rdpTls* tls, const char* cert_file, const char* privatekey_file)
 
 BOOL tls_disconnect(rdpTls* tls)
 {
+	if (!tls)
+		return FALSE;
+
 	if (tls->ssl)
 		SSL_shutdown(tls->ssl);
 
@@ -344,7 +374,18 @@ int tls_read(rdpTls* tls, BYTE* data, int length)
 	int error;
 	int status;
 
+	if (!tls)
+		return -1;
+
+	if (!tls->ssl)
+		return -1;
+
 	status = SSL_read(tls->ssl, data, length);
+
+	if (status == 0)
+	{
+		return -1; /* peer disconnected */
+	}
 
 	if (status <= 0)
 	{
@@ -385,25 +426,16 @@ int tls_read(rdpTls* tls, BYTE* data, int length)
 	return status;
 }
 
-int tls_read_all(rdpTls* tls, BYTE* data, int length)
-{
-	int status;
-
-	do
-	{
-		status = tls_read(tls, data, length);
-		if (status == 0)
-			tls_wait_read(tls);
-	}
-	while (status == 0);
-
-	return status;
-}
-
 int tls_write(rdpTls* tls, BYTE* data, int length)
 {
 	int error;
 	int status;
+
+	if (!tls)
+		return -1;
+
+	if (!tls->ssl)
+		return -1;
 
 	status = SSL_write(tls->ssl, data, length);
 
@@ -750,7 +782,7 @@ rdpTls* tls_new(rdpSettings* settings)
 
 	tls = (rdpTls*) malloc(sizeof(rdpTls));
 
-	if (tls != NULL)
+	if (tls)
 	{
 		ZeroMemory(tls, sizeof(rdpTls));
 
@@ -766,24 +798,35 @@ rdpTls* tls_new(rdpSettings* settings)
 
 void tls_free(rdpTls* tls)
 {
-	if (tls != NULL)
+	if (tls)
 	{
 		if (tls->ssl)
+		{
 			SSL_free(tls->ssl);
+			tls->ssl = NULL;
+		}
 
 		if (tls->ctx)
+		{
 			SSL_CTX_free(tls->ctx);
+			tls->ctx = NULL;
+		}
 
 		if (tls->PublicKey)
+		{
 			free(tls->PublicKey);
+			tls->PublicKey = NULL;
+		}
 
 		if (tls->Bindings)
 		{
 			free(tls->Bindings->Bindings);
 			free(tls->Bindings);
+			tls->Bindings = NULL;
 		}
 
 		certificate_store_free(tls->certificate_store);
+		tls->certificate_store = NULL;
 
 		free(tls);
 	}

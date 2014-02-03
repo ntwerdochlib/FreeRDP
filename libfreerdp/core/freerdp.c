@@ -39,6 +39,7 @@
 #include <freerdp/error.h>
 #include <freerdp/event.h>
 #include <freerdp/locale/keyboard.h>
+#include <freerdp/version.h>
 
 /* connectErrorCode is 'extern' in error.h. See comment there.*/
 
@@ -207,6 +208,10 @@ BOOL freerdp_check_fds(freerdp* instance)
 	int status;
 	rdpRdp* rdp;
 
+	assert(instance);
+	assert(instance->context);
+	assert(instance->context->rdp);
+
 	rdp = instance->context->rdp;
 
 	status = rdp_check_fds(rdp);
@@ -317,6 +322,11 @@ BOOL freerdp_disconnect(freerdp* instance)
 	return TRUE;
 }
 
+BOOL freerdp_reconnect(freerdp* instance)
+{
+	return rdp_client_reconnect(instance->context->rdp);
+}
+
 BOOL freerdp_shall_disconnect(freerdp* instance)
 {
 	return instance->context->rdp->disconnect;
@@ -385,6 +395,9 @@ int freerdp_context_new(freerdp* instance)
 	context = instance->context;
 	context->instance = instance;
 
+	context->ServerMode = FALSE;
+	context->settings = instance->settings;
+
 	context->pubSub = PubSub_New(TRUE);
 	PubSub_AddEventTypes(context->pubSub, FreeRDP_Events, sizeof(FreeRDP_Events) / sizeof(wEventType));
 
@@ -425,6 +438,9 @@ int freerdp_context_new(freerdp* instance)
  */
 void freerdp_context_free(freerdp* instance)
 {
+	if (!instance)
+		return;
+
 	if (!instance->context)
 		return;
 

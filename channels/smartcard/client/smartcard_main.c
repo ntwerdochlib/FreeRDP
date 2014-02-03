@@ -32,7 +32,6 @@
 
 #include <freerdp/utils/list.h>
 #include <freerdp/utils/debug.h>
-#include <freerdp/utils/svc_plugin.h>
 
 #include <freerdp/channels/rdpdr.h>
 
@@ -233,7 +232,6 @@ static void smartcard_irp_complete(IRP* irp)
 	 * to be in this file so that "smartcard_irp_request()" can reference it.
 	 */
 
-	DEBUG_SVC("DeviceId %d FileId %d CompletionId %d", irp->device->id, irp->FileId, irp->CompletionId);
 	DEBUG_SCARD("DeviceId %d FileId %d CompletionId %d", irp->device->id, irp->FileId, irp->CompletionId);
 
 	pos = Stream_GetPosition(irp->output);
@@ -253,6 +251,7 @@ static void smartcard_irp_complete(IRP* irp)
 
 	if (!duplicate)
 	{
+		irp->Complete(irp);
 #ifdef WITH_DEBUG_SCARD
 		{
 			char buffer[4096] = {0x20};
