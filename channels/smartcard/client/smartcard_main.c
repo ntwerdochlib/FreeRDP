@@ -272,7 +272,7 @@ static void smartcard_irp_complete(IRP* irp)
 			DEBUG_SCARD("%s\n", buffer);
 		}
 #endif
-		svc_plugin_send(irp->devman->plugin, irp->output);
+		//svc_plugin_send(irp->devman->plugin, irp->output);
 		irp->output = NULL;
 	} else {
 		DEBUG_SCARD("Duplicate IRP: DeviceId %d FileId %d CompletionId %d", irp->device->id, irp->FileId, irp->CompletionId);

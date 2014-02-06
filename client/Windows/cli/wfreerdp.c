@@ -109,7 +109,7 @@ INT WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
 	RDP_CLIENT_ENTRY_POINTS clientEntryPoints;
 	DWORD dwResult;
 
-#if defined(WIN32) && defined(WITH_DEBUG)
+#if defined(WIN32)
 	gLogMutex = CreateMutex(NULL, FALSE, NULL);
 #endif
 

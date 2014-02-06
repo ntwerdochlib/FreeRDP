@@ -263,10 +263,12 @@ int credssp_ntlm_client_init(rdpCredssp* credssp)
 	sspi_SecBufferAlloc(&credssp->PublicKey, tls->PublicKeyLength);
 	CopyMemory(credssp->PublicKey.pvBuffer, tls->PublicKey, tls->PublicKeyLength);
 
+#if 0
 	length = sizeof(TERMSRV_SPN_PREFIX) + strlen(settings->ServerHostname);
 
 	spn = (SEC_CHAR*) malloc(length + 1);
 	sprintf(spn, "%s%s", TERMSRV_SPN_PREFIX, settings->ServerHostname);
+#endif
 
 #ifdef UNICODE
 	{
@@ -1380,7 +1382,9 @@ void credssp_encode_ts_credentials(rdpCredssp* credssp)
 	int UserLength;
 	int PasswordLength;
 
-#if 0	length = ber_sizeof_sequence(credssp_sizeof_ts_credentials(credssp)) + 4;
+#if 0
+	//TODO(ntwerdochlib) Appears that changes here from master are more accurate
+	length = ber_sizeof_sequence(credssp_sizeof_ts_credentials(credssp)) + 4;
 #else
 	DomainLength = credssp->identity.DomainLength;
 	UserLength = credssp->identity.UserLength;
