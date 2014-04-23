@@ -357,8 +357,10 @@ BOOL transport_connect_nla(rdpTransport* transport)
 			freerdp_set_last_error(instance->context, FREERDP_ERROR_AUTHENTICATION_FAILED);
 		}
 
+		//TODO(ntwerdochlib) should this become a wlog message? perhaps with a new flag for console error?
 		fprintf(stderr, "Authentication failure, check credentials.\n"
 			"If credentials are valid, the NTLMSSP implementation may be to blame.\n");
+		WLog_Print(transport->log, WLOG_ERROR, "Authentication failure, check credentials.  If credentials are valid, the NTLMSSP implementation may be to blame.");
 
 		transport_set_nla_mode(transport, FALSE);
 		credssp_free(transport->credssp);
@@ -552,6 +554,7 @@ BOOL transport_accept_nla(rdpTransport* transport)
 	if (credssp_authenticate(transport->credssp) < 0)
 	{
 		fprintf(stderr, "client authentication failure\n");
+		WLog_Print(transport->log, WLOG_ERROR, "client authentication failure");
 
 		transport_set_nla_mode(transport, FALSE);
 		credssp_free(transport->credssp);
@@ -594,10 +597,6 @@ UINT32 nla_read_header(wStream* s)
 			length += 4;
 			Stream_Seek(s, 4);
 		}
-		else
-		{
-			fprintf(stderr, "Error reading TSRequest!\n");
-		}
 	}
 	else
 	{
@@ -619,8 +618,6 @@ UINT32 nla_header_length(wStream* s)
 			length = 3;
 		else if ((Stream_Pointer(s)[1] & ~(0x80)) == 2)
 			length = 4;
-		else
-			fprintf(stderr, "Error reading TSRequest!\n");
 	}
 	else
 	{
@@ -734,7 +731,7 @@ int transport_read(rdpTransport* transport, wStream* s)
 				}
 				else
 				{
-					fprintf(stderr, "Error reading TSRequest!\n");
+					WLog_Print(transport->log, WLOG_ERROR, "Error reading TSRequest!\n");
 					return -1;
 				}
 			}
@@ -775,8 +772,12 @@ int transport_read(rdpTransport* transport, wStream* s)
 	/* dump when whole PDU is read */
 	if (position + status >= pduLength)
 	{
-		fprintf(stderr, "Local < Remote\n");
-		winpr_HexDump(Stream_Buffer(s), pduLength);
+		char* data = winpr_BinToHexString(Stream_Buffer(s), pduLength, TRUE);
+		if (data) 
+		{
+			WLog_Print(transport->log, WLOG_DEBUG, "Local < Remote : Bytes %d (%#x) %s", pduLength, pduLength, data);
+			free(data);
+		}
 	}
 #endif
 
@@ -813,10 +814,11 @@ int transport_write(rdpTransport* transport, wStream* s)
 	Stream_SetPosition(s, 0);
 
 #ifdef WITH_DEBUG_TRANSPORT
-	if (length > 0)
-	{
-		fprintf(stderr, "Local > Remote\n");
-		winpr_HexDump(Stream_Buffer(s), length);
+		char* data = winpr_BinToHexString(Stream_Buffer(s), length, TRUE);
+		WLog_Print(transport->log, WLOG_DEBUG, "Local > Remote : Bytes %d (%#x) %s", length, length, data);
+		if (data) {
+			free(data);
+		}
 	}
 #endif
 
@@ -1004,6 +1006,10 @@ int transport_check_fds(rdpTransport* transport)
 
 				/* TSRequest header can be 2, 3 or 4 bytes long */
 				length = nla_header_length(transport->ReceiveBuffer);
+				if (length == 0)
+				{
+					WLog_Print(transport->log, WLOG_ERROR, "Error reading TSRequest!");
+				}
 
 				if (pos < length)
 				{
@@ -1012,6 +1018,10 @@ int transport_check_fds(rdpTransport* transport)
 				}
 
 				length = nla_read_header(transport->ReceiveBuffer);
+				if (length == 0)
+				{
+					WLog_Print(transport->log, WLOG_ERROR, "Error reading TSRequest!");
+				}
 			}
 		}
 		else
@@ -1053,6 +1063,8 @@ int transport_check_fds(rdpTransport* transport)
 		{
 			fprintf(stderr, "transport_check_fds: protocol error, not a TPKT or Fast Path header.\n");
 			winpr_HexDump(Stream_Buffer(transport->ReceiveBuffer), pos);
+			WLog_Print(transport->log, WLOG_ERROR, "transport_check_fds: protocol error, not a TPKT or Fast Path header. Check transport_check_fds.dat");
+			WLog_Data(transport->log, WLOG_ERROR, "transport_check_fds.dat", transport->ReceiveBuffer, pos);
 			return -1;
 		}
 
@@ -1210,6 +1222,7 @@ rdpTransport* transport_new(rdpSettings* settings)
 
 		WLog_Init();
 		transport->log = WLog_Get("com.freerdp.core.transport");
+		WLog_SetLogLevel(transport->log, WLOG_DEBUG);
 
 		transport->TcpIn = tcp_new(settings);
 
