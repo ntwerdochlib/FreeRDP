@@ -455,8 +455,6 @@ BOOL wf_post_connect(freerdp* instance)
 	return TRUE;
 }
 
-//static const char wfTargetName[] = "TARGET";
-
 #define OFFSET(type, field) ((ULONG_PTR)(&((type *)0)->field))
 
 BOOL CopyCspDataValue(PKERB_SMARTCARD_CSP_INFO cspInfo, PWSTR* buffer, PUINT len, DWORD offset)
