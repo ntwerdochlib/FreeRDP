@@ -84,6 +84,7 @@
 
 #ifdef WIN32
 #define ALLOW_SSPI_MODULE_OVERRIDE
+#define snprintf _snprintf
 #endif
 
 #ifdef WITH_DEBUG_NLA
@@ -288,32 +289,32 @@ void LogSSPIError(wLog* log, SECURITY_STATUS sc)
 	static const int msgSize = ARRAYSIZE(msg);
 	int x = 0;
 
-	x = _snprintf(&msg[0], msgSize, "SECURITY_STATUS: %#x - ", sc);
+	x = snprintf(&msg[0], msgSize, "SECURITY_STATUS: %#x - ", sc);
 	switch (sc) {
 	case SEC_E_QOP_NOT_SUPPORTED:
-		x += _snprintf(&msg[x], msgSize-x, "Neither confidentiality nor integrity are supported by the security context.");
+		x += snprintf(&msg[x], msgSize-x, "Neither confidentiality nor integrity are supported by the security context.");
 		break;
 	case SEC_E_INVALID_TOKEN:
-		x += _snprintf(&msg[x], msgSize-x, "No SECBUFFER_DATA type buffer was found.");
+		x += snprintf(&msg[x], msgSize-x, "No SECBUFFER_DATA type buffer was found.");
 		break;
 	case SEC_E_INVALID_HANDLE:
-		x += _snprintf(&msg[x], msgSize-x, "A context handle that is not valid was specified in the phContext parameter.");
+		x += snprintf(&msg[x], msgSize-x, "A context handle that is not valid was specified in the phContext parameter.");
 		break;
 	case SEC_E_INSUFFICIENT_MEMORY:
-		x += _snprintf(&msg[x], msgSize-x, "There is not enough memory available to complete the requested action.");
+		x += snprintf(&msg[x], msgSize-x, "There is not enough memory available to complete the requested action.");
 		break;
 	case SEC_E_BUFFER_TOO_SMALL:
-		x += _snprintf(&msg[x], msgSize-x, "The output buffer is too small.");
+		x += snprintf(&msg[x], msgSize-x, "The output buffer is too small.");
 		break;
 	case SEC_E_CONTEXT_EXPIRED:
-		x += _snprintf(&msg[x], msgSize-x, "The application is referencing a context that has already been closed. A properly written application should not receive this error.");
+		x += snprintf(&msg[x], msgSize-x, "The application is referencing a context that has already been closed. A properly written application should not receive this error.");
 		break;
 	case SEC_E_CRYPTO_SYSTEM_INVALID:
-		x += _snprintf(&msg[x], msgSize-x, "The cipher chosen for the security context is not supported.");
+		x += snprintf(&msg[x], msgSize-x, "The cipher chosen for the security context is not supported.");
 		break;
 
 	default:
-		x += _snprintf(&msg[x], msgSize-x, "Unknown Error: %#x", sc);
+		x += snprintf(&msg[x], msgSize-x, "Unknown Error: %#x", sc);
 		break;
 	}
 
@@ -1595,7 +1596,7 @@ void credssp_send(rdpCredssp* credssp)
 #if defined(WITH_DEBUG_NLA)
 	{
 		char t[32] = {0};
-		_snprintf(t, ARRAYSIZE(t), "tsrequest-%d.ber", save_ts_request++);
+		snprintf(t, ARRAYSIZE(t), "tsrequest-%d.ber", save_ts_request++);
 		WLog_Print(credssp->log, WLOG_DEBUG, "saving tsrequest buffer: %s", t);
 		WLog_Data(credssp->log, WLOG_DEBUG, t, (BYTE*)sstart, s->length);
 	}
