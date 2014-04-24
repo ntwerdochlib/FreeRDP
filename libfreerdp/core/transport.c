@@ -949,11 +949,11 @@ void transport_get_read_handles(rdpTransport* transport, HANDLE* events, DWORD* 
 
 int transport_check_fds(rdpTransport* transport)
 {
-	int pos;
-	int status;
-	int length;
-	int recv_status;
-	wStream* received;
+	int pos = 0;
+	int status = 0;
+	int length = 0;
+	int recv_status = 0;
+	wStream* received = NULL;
 
 	if (!transport)
 		return -1;
