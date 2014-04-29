@@ -1388,7 +1388,7 @@ SECURITY_STATUS credssp_encrypt_ts_credentials(rdpCredssp* credssp)
 #ifdef WIN32
 	token_size = credssp->ContextSizes.cbMaxToken;
 #else
-	token_size = credssp->ContextSizes.cbMaxSignaure;
+	token_size = credssp->ContextSizes.cbMaxSignature;
 #endif
 
 	buffer_size = token_size + credssp->ts_credentials.cbBuffer;
@@ -1408,7 +1408,7 @@ SECURITY_STATUS credssp_encrypt_ts_credentials(rdpCredssp* credssp)
 
 	Buffers[1].cbBuffer = credssp->ts_credentials.cbBuffer;
 
-	Buffers[1].pvBuffer = (BYTE*)pTemp + Buffers[1].cbBuffer;
+	Buffers[1].pvBuffer = (BYTE*)pTemp + Buffers[0].cbBuffer;
 	CopyMemory(Buffers[1].pvBuffer, credssp->ts_credentials.pvBuffer, Buffers[1].cbBuffer);
 
 #if defined(WITH_DEBUG_CREDSSP)
@@ -1449,7 +1449,7 @@ SECURITY_STATUS credssp_decrypt_ts_credentials(rdpCredssp* credssp)
 	int length = 0;
 	BYTE* buffer = NULL;
 	ULONG pfQOP;
-	SecBuffer Buffers[2] = {0};
+	SecBuffer Buffers[2];
 	SecBufferDesc Message;
 	SECURITY_STATUS status;
 

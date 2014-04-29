@@ -36,11 +36,11 @@ int winpr_HexDumpToBuffer(char* buffer, size_t count, BYTE* data, int length)
 	int i, line, offset = 0;
 	int x = 0;
 
-	x += _snprintf(buffer, count, "     0  1  2  3  4  5  6  7  8  9  A  B  C  D  E  F\n");
+	x += sprintf_s(buffer, count, "     0  1  2  3  4  5  6  7  8  9  A  B  C  D  E  F\n");
 
 	while (offset < length)
 	{
-		x += _snprintf(buffer+x, count-x, "%04x ", offset);
+		x += sprintf_s(buffer+x, count-x, "%04x ", offset);
 
 		line = length - offset;
 
@@ -48,15 +48,15 @@ int winpr_HexDumpToBuffer(char* buffer, size_t count, BYTE* data, int length)
 			line = WINPR_HEXDUMP_LINE_LENGTH;
 
 		for (i = 0; i < line; i++)
-			x += _snprintf(buffer+x, count-x, "%02x ", p[i]);
+			x += sprintf_s(buffer+x, count-x, "%02x ", p[i]);
 
 		for (; i < WINPR_HEXDUMP_LINE_LENGTH; i++)
-			x += _snprintf(buffer+x, count-x, "   ");
+			x += sprintf_s(buffer+x, count-x, "   ");
 
 		for (i = 0; i < line; i++)
-			x += _snprintf(buffer+x, count-x, "%c", (p[i] >= 0x20 && p[i] < 0x7F) ? p[i] : '.');
+			x += sprintf_s(buffer+x, count-x, "%c", (p[i] >= 0x20 && p[i] < 0x7F) ? p[i] : '.');
 
-		x += _snprintf(buffer+x, count-x, "\n");
+		x += sprintf_s(buffer+x, count-x, "\n");
 
 		offset += line;
 		p += line;
