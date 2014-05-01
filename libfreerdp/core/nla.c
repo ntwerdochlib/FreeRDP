@@ -1035,7 +1035,7 @@ SECURITY_STATUS credssp_decrypt_public_key_echo(rdpCredssp* credssp)
 
 			x += sprintf_s(&buffer[x], buffer_size, "Could not verify server's public key echo\nExpected (length = %d):\n", public_key_length);
 			x += winpr_HexDumpToBuffer(&buffer[x], buffer_size-x, public_key1, public_key_length);
-			x += sprintf_s(&buffer[x], buffer_size-x, "Actual (length = %d):\n", Buffers[1].cbBuffer);
+			x += sprintf_s(&buffer[x], buffer_size-x, "Actual (length = %ld):\n", Buffers[1].cbBuffer);
 			x += winpr_HexDumpToBuffer(&buffer[x], buffer_size-x, public_key2, Buffers[1].cbBuffer);
 			WLog_Print(credssp->log, WLOG_DEBUG, "%s", buffer);
 			free(buffer);
