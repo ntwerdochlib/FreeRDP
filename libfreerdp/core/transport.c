@@ -1061,10 +1061,12 @@ int transport_check_fds(rdpTransport* transport)
 
 		if (length == 0)
 		{
-			fprintf(stderr, "transport_check_fds: protocol error, not a TPKT or Fast Path header.\n");
-			winpr_HexDump(Stream_Buffer(transport->ReceiveBuffer), pos);
-			WLog_Print(transport->log, WLOG_ERROR, "transport_check_fds: protocol error, not a TPKT or Fast Path header. Check transport_check_fds.dat");
-			WLog_Data(transport->log, WLOG_ERROR, "transport_check_fds.dat", transport->ReceiveBuffer, pos);
+			char buffer[4096] = {0};
+			int x = 0;
+
+			x = sprintf_s(&buffer[x], ARRAYSIZE(buffer)-x, "transport_check_fds: protocol error, not a TPKT or Fast Path header.\n");
+			winpr_HexDumpToBuffer(&buffer[x], ARRAYSIZE(buffer)-x, Stream_Buffer(transport->ReceiveBuffer), pos);
+			WLog_Print(transport->log, WLOG_ERROR, "%s", buffer);
 			return -1;
 		}
 
