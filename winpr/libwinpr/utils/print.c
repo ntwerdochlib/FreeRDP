@@ -30,6 +30,62 @@
 
 #include "trio.h"
 
+int winpr_HexDumpToBuffer(char* buffer, size_t* count, BYTE* data, int length)
+{
+	BYTE* p = data;
+	int i, line, offset = 0;
+	int x = 0;
+
+	if (NULL == buffer)
+	{
+		const int bytes = length + (length % WINPR_HEXDUMP_LINE_LENGTH);
+		const int header_size = 52; /*Header size*/
+		const int num_lines = bytes/(WINPR_HEXDUMP_LINE_LENGTH);
+
+		*count = header_size + (num_lines * 6 /*5 bytes for offset value + 1 byte for the CR*/) + /* Each byte of data needs 4bytes of output */(bytes * 4) + 1;
+
+		return 0;
+	}
+
+	x += sprintf_s(buffer, *count, "     0  1  2  3  4  5  6  7  8  9  A  B  C  D  E  F\n");
+
+	while (offset < length)
+	{
+		x += sprintf_s(buffer+x, *count-x, "%04x ", offset);
+
+		line = length - offset;
+
+		if (line > WINPR_HEXDUMP_LINE_LENGTH)
+			line = WINPR_HEXDUMP_LINE_LENGTH;
+
+		for (i = 0; i < line; i++)
+			x += sprintf_s(buffer+x, *count-x, "%02x ", p[i]);
+
+		for (; i < WINPR_HEXDUMP_LINE_LENGTH; i++)
+			x += sprintf_s(buffer+x, *count-x, "   ");
+
+		for (i = 0; i < line; i++)
+			x += sprintf_s(buffer+x, *count-x, "%c", (p[i] >= 0x20 && p[i] < 0x7F) ? p[i] : '.');
+
+		x += sprintf_s(buffer+x, *count-x, "\n");
+
+		offset += line;
+		p += line;
+	}
+
+	return x;
+}
+
+void winpr_HexDumpf(BYTE* data, int length, const char* format, ...)
+{
+	va_list args;
+	va_start(args, format);
+	vfprintf(stderr, format, args);
+	va_end(args);
+
+	winpr_HexDump(data, length);
+}
+
 void winpr_HexDump(BYTE* data, int length)
 {
 	BYTE* p = data;
@@ -58,6 +114,7 @@ void winpr_HexDump(BYTE* data, int length)
 		offset += line;
 		p += line;
 	}
+	fflush(stderr);
 }
 
 void winpr_CArrayDump(BYTE* data, int length, int width)
@@ -136,3 +193,16 @@ int wvsnprintfx(char *buffer, size_t bufferSize, const char* fmt, va_list args)
 {
 	return trio_vsnprintf(buffer, bufferSize, fmt, args);
 }
+
+int wprintfxToBuffer(char *buffer, size_t count, const char *fmt, ...)
+{
+	va_list args;
+	int status;
+
+	va_start(args, fmt);
+	status = trio_snprintf(buffer, count, fmt, args);
+	va_end(args);
+
+	return status;
+}
+
