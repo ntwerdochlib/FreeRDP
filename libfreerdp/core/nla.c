@@ -491,14 +491,10 @@ int credssp_client_authenticate(rdpCredssp* credssp)
 			default:
 #ifdef WITH_DEBUG_CREDSSP
 				{
-					size_t buffer_size = 0;
+					size_t buffer_size = -1;
 					char* buffer = NULL;
-					winpr_HexDumpToBuffer(NULL, &buffer_size, NULL, credssp->negoToken.cbBuffer);
-					buffer = (char*)malloc(buffer_size);
-					if (buffer)
+					if (winpr_HexDumpToBuffer(&buffer, &buffer_size, (BYTE*)credssp->negoToken.pvBuffer, credssp->negoToken.cbBuffer))
 					{
-						memset(buffer, 0, buffer_size);
-						winpr_HexDumpToBuffer(&buffer[0], &buffer_size, (BYTE*)credssp->negoToken.pvBuffer, credssp->negoToken.cbBuffer);
 						WLog_Print(credssp->log, WLOG_DEBUG, "Sending Authentication Token\n%s", buffer);
 						free(buffer);
 						buffer = NULL;
@@ -525,14 +521,10 @@ int credssp_client_authenticate(rdpCredssp* credssp)
 
 #ifdef WITH_DEBUG_CREDSSP
 		{
-			size_t buffer_size = 0;
-			char *buffer = NULL;
-			winpr_HexDumpToBuffer(NULL, &buffer_size, NULL, credssp->negoToken.cbBuffer);
-			buffer = (char*)malloc(buffer_size);
-			if (buffer)
+			size_t buffer_size = -1;
+			char* buffer = NULL;
+			if (winpr_HexDumpToBuffer(&buffer, &buffer_size, (BYTE*)credssp->negoToken.pvBuffer, credssp->negoToken.cbBuffer))
 			{
-				memset(buffer, 0, buffer_size);
-				winpr_HexDumpToBuffer(&buffer[0], &buffer_size, (BYTE*)credssp->negoToken.pvBuffer, credssp->negoToken.cbBuffer); 
 				WLog_Print(credssp->log, WLOG_DEBUG, "Receiving Authentication Token (%d)\n%s", (int) credssp->negoToken.cbBuffer, buffer);
 				free(buffer);
 				buffer = NULL;
@@ -1027,23 +1019,21 @@ SECURITY_STATUS credssp_decrypt_public_key_echo(rdpCredssp* credssp)
 	{
 #if defined(WITH_DEBUG_CREDSSP)
 		{
-			size_t buffer_size1 = 0;
-			size_t buffer_size2 = 0;
+			size_t buffer_size1 = -1;
+			size_t buffer_size2 = -1;
 			char* buffer1 = NULL;
 			char* buffer2 = NULL;
-			winpr_HexDumpToBuffer(NULL, &buffer_size1, NULL, public_key_length);
-			buffer1 = (char*)malloc(buffer_size1);
-			if (buffer1) {
-				winpr_HexDumpToBuffer(NULL, &buffer_size2, NULL, Buffers[1].cbBuffer);
-				buffer2 = (char*)malloc(buffer_size2);
-				
-				if (buffer2)
-				{
-					winpr_HexDumpToBuffer(buffer1, &buffer_size1, public_key1, public_key_length);
-					winpr_HexDumpToBuffer(buffer2, &buffer_size2, public_key2, Buffers[1].cbBuffer);
-					
-					WLog_Print(credssp->log, WLOG_DEBUG, "Could not verify server's public key echo\nExpected (length = %d):\n%s\nActual (length = %ld):\n%s\n", public_key_length, buffer1, Buffers[1].cbBuffer, buffer2);
-				}
+
+			winpr_HexDumpToBuffer(&buffer1, &buffer_size1, public_key1, public_key_length);
+			winpr_HexDumpToBuffer(&buffer2, &buffer_size2, public_key2, Buffers[1].cbBuffer);
+
+			if (buffer1 && buffer2)
+			{
+				WLog_Print(credssp->log, WLOG_DEBUG, "Could not verify server's public key echo\nExpected (length = %d):\n%s\nActual (length = %ld):\n%s\n", public_key_length, buffer1, Buffers[1].cbBuffer, buffer2);
+			}
+			else
+			{
+				WLog_Print(credssp->log, WLOG_DEBUG, "Could not verify server's public key echo\nExpected (length = %d) Actual (length = %ld)\n", public_key_length, Buffers[1].cbBuffer);
 			}
 
 			if (buffer1)
@@ -1694,20 +1684,13 @@ int credssp_recv(rdpCredssp* credssp)
 		!ber_read_integer(s, &version))
 	{
 		char* buffer = NULL;
-		size_t buffer_size = 0;
+		size_t buffer_size = -1;
 
-		winpr_HexDumpToBuffer(NULL, &buffer_size, NULL, (int)Stream_Length(s));
-		buffer = (char*)malloc(buffer_size);
-		if (buffer)
+		if (winpr_HexDumpToBuffer(&buffer, &buffer_size, Stream_Buffer(s), (int)Stream_Length(s)))
 		{
-			winpr_HexDumpToBuffer(buffer, &buffer_size, Stream_Buffer(s), (int)Stream_Length(s));
 			WLog_Print(credssp->log, WLOG_ERROR, "Invalid TSRequest message\n%s", buffer);
 			free(buffer);
 			buffer = NULL;
-		}
-		else
-		{
-			WLog_Print(credssp->log, WLOG_ERROR, "Invalid TSRequest message\n");
 		}
 
 		Stream_Free(s, TRUE);
@@ -1724,13 +1707,10 @@ int credssp_recv(rdpCredssp* credssp)
 			((int) Stream_GetRemainingLength(s)) < length)
 		{
 			char* buffer = NULL;
-			size_t buffer_size = 0;
+			size_t buffer_size = -1;
 
-			winpr_HexDumpToBuffer(NULL, &buffer_size, NULL, (int)Stream_Length(s));
-			buffer = (char*)malloc(buffer_size);
-			if (buffer)
+			if (winpr_HexDumpToBuffer(&buffer, &buffer_size, Stream_Buffer(s), (int)Stream_Length(s)))
 			{
-				winpr_HexDumpToBuffer(&buffer[0], &buffer_size, Stream_Buffer(s), (int)Stream_Length(s));
 				WLog_Print(credssp->log, WLOG_ERROR, "Invalid TSRequest message.  Failed to parse NegoData.\n%s", buffer);
 				free(buffer);
 				buffer = NULL;
@@ -1755,13 +1735,10 @@ int credssp_recv(rdpCredssp* credssp)
 			((int) Stream_GetRemainingLength(s)) < length)
 		{
 			char *buffer = NULL;
-			size_t buffer_size = 0;
+			size_t buffer_size = -1;
 
-			winpr_HexDumpToBuffer(NULL, &buffer_size, NULL, (int)Stream_Length(s));
-			buffer = (char*)malloc(buffer_size);
-			if (buffer)
+			if (winpr_HexDumpToBuffer(&buffer, &buffer_size, Stream_Buffer(s), (int)Stream_Length(s)))
 			{
-				winpr_HexDumpToBuffer(buffer, &buffer_size, Stream_Buffer(s), (int)Stream_Length(s));
 				WLog_Print(credssp->log, WLOG_ERROR, "Invalid TSRequest message. Failed to parse authInfo.\n%s", buffer);
 				free(buffer);
 				buffer = NULL;
@@ -1786,13 +1763,10 @@ int credssp_recv(rdpCredssp* credssp)
 			((int) Stream_GetRemainingLength(s)) < length)
 		{
 			char *buffer = NULL;
-			size_t buffer_size = 0;
+			size_t buffer_size = -1;
 
-			winpr_HexDumpToBuffer(NULL, &buffer_size, NULL, (int)Stream_Length(s));
-			buffer = (char*)malloc(buffer_size);
-			if (buffer)
+			if (winpr_HexDumpToBuffer(&buffer, &buffer_size, Stream_Buffer(s), (int)Stream_Length(s)))
 			{
-				winpr_HexDumpToBuffer(buffer, &buffer_size, Stream_Buffer(s), (int)Stream_Length(s));
 				WLog_Print(credssp->log, WLOG_ERROR, "Invalid TSRequest message. Failed to parse authInfo.\n%s", buffer);
 				free(buffer);
 				buffer = NULL;
@@ -1815,52 +1789,46 @@ int credssp_recv(rdpCredssp* credssp)
 	return 0;
 }
 
+DWORD maximum(DWORD a, DWORD b, DWORD c)
+{
+	DWORD max = a;
+
+	if (b > max) {
+		max = b;
+	}
+
+	if (c > max) {
+		max = c;
+	}
+
+	return max;
+}
+
 void credssp_buffer_print(rdpCredssp* credssp)
 {
 	char* buffer = NULL;
 	size_t buffer_size = 0;
+	size_t max_size = maximum(credssp->negoToken.cbBuffer, credssp->pubKeyAuth.cbBuffer, credssp->authInfo.cbBuffer);
 
-	if (credssp->negoToken.cbBuffer > 0)
+	winpr_HexDumpToBuffer(&buffer, &buffer_size, NULL, max_size);
+	buffer = (char*)malloc(buffer_size);
+
+	if (credssp->negoToken.cbBuffer > 0 &&
+		winpr_HexDumpToBuffer(&buffer, &buffer_size, (BYTE*)credssp->negoToken.pvBuffer, credssp->negoToken.cbBuffer))
 	{
-		winpr_HexDumpToBuffer(NULL, &buffer_size, NULL, credssp->negoToken.cbBuffer);
-		buffer = (char*)malloc(buffer_size);
-		if (buffer)
-		{
-			winpr_HexDumpToBuffer(buffer, &buffer_size, (BYTE*)credssp->negoToken.pvBuffer, credssp->negoToken.cbBuffer);
-			WLog_Print(credssp->log, WLOG_DEBUG, "CredSSP.negoToken (length = %d):\n%s", (int) credssp->negoToken.cbBuffer, buffer);
-		}
+		WLog_Print(credssp->log, WLOG_DEBUG, "CredSSP.negoToken (length = %d):\n%s", (int) credssp->negoToken.cbBuffer, buffer);
 	}
 
-	if (credssp->pubKeyAuth.cbBuffer > 0)
+	if (credssp->pubKeyAuth.cbBuffer > 0 &&
+		winpr_HexDumpToBuffer(&buffer, &buffer_size, (BYTE*)credssp->pubKeyAuth.pvBuffer, credssp->pubKeyAuth.cbBuffer))
 	{
-		size_t cur_buffer_size = buffer_size;
-		winpr_HexDumpToBuffer(NULL, &buffer_size, NULL, credssp->pubKeyAuth.cbBuffer);
-		if ( buffer_size > cur_buffer_size)
-		{
-			free(buffer);
-			buffer = (char*)malloc(buffer_size);
-		}
-		if (buffer)
-		{
-			winpr_HexDumpToBuffer(buffer, &buffer_size, (BYTE*)credssp->pubKeyAuth.pvBuffer, credssp->pubKeyAuth.cbBuffer);
-			WLog_Print(credssp->log, WLOG_DEBUG, "CredSSP.pubKeyAuth (length = %d):\n%s", (int)credssp->pubKeyAuth.cbBuffer, buffer);
-		}
+		WLog_Print(credssp->log, WLOG_DEBUG, "CredSSP.pubKeyAuth (length = %d):\n%s", (int)credssp->pubKeyAuth.cbBuffer, buffer);
 	}
 
-	if (credssp->authInfo.cbBuffer > 0)
+	if (credssp->authInfo.cbBuffer > 0 &&
+		winpr_HexDumpToBuffer(&buffer, &buffer_size, (BYTE*)credssp->authInfo.pvBuffer, credssp->authInfo.cbBuffer))
 	{
-		size_t cur_buffer_size = buffer_size;
-		winpr_HexDumpToBuffer(NULL, &buffer_size, NULL, credssp->authInfo.cbBuffer);
-		if ( buffer_size > cur_buffer_size)
-		{
-			free(buffer);
-			buffer = (char*)malloc(buffer_size);
-		}
-		if (buffer)
-		{
-			winpr_HexDumpToBuffer(buffer, &buffer_size, (BYTE*)credssp->authInfo.pvBuffer, credssp->authInfo.cbBuffer);
-			WLog_Print(credssp->log, WLOG_DEBUG, "CredSSP.authInfo (length = %d):\n%s", (int)credssp->authInfo.cbBuffer, buffer);
-		}
+		WLog_Print(credssp->log, WLOG_DEBUG, "CredSSP.authInfo (length = %d):\n%s", (int)credssp->authInfo.cbBuffer, buffer);
 	}
 
 	if (buffer)

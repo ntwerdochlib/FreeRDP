@@ -1063,13 +1063,10 @@ int transport_check_fds(rdpTransport* transport)
 		if (length == 0)
 		{
 			char* buffer = NULL;
-			size_t buffer_size = 0;
+			size_t buffer_size = -1;
 
-			winpr_HexDumpToBuffer(NULL, &buffer_size, NULL, pos);
-			buffer = (char*)malloc(buffer_size);
-			if (buffer)
+			if (winpr_HexDumpToBuffer(&buffer, &buffer_size, Stream_Buffer(transport->ReceiveBuffer), pos))
 			{
-				winpr_HexDumpToBuffer(buffer, &buffer_size, Stream_Buffer(transport->ReceiveBuffer), pos);
 				WLog_Print(transport->log, WLOG_ERROR, "transport_check_fds: protocol error, not a TPKT or Fast Path header.\n%s", buffer);
 				free(buffer);
 				buffer = NULL;
