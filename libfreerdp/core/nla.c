@@ -473,12 +473,14 @@ int credssp_client_authenticate(rdpCredssp* credssp)
 #ifdef WITH_DEBUG_CREDSSP
 				{
 					size_t buffer_size = -1;
-					char* buffer = NULL;
-					if (winpr_HexDumpToBuffer(&buffer, &buffer_size, (BYTE*)credssp->negoToken.pvBuffer, credssp->negoToken.cbBuffer))
-					{
-						WLog_Print(credssp->log, WLOG_DEBUG, "Sending Authentication Token\n%s", buffer);
-						free(buffer);
-						buffer = NULL;
+					if (winpr_HexDumpToBuffer(NULL, &buffer_size, (BYTE*)credssp->negoToken.pvBuffer, credssp->negoToken.cbBuffer)) {
+						char* buffer = (char*)calloc(buffer_size, sizeof(char));
+						if (buffer && winpr_HexDumpToBuffer(buffer, &buffer_size, (BYTE*)credssp->negoToken.pvBuffer, credssp->negoToken.cbBuffer))
+						{
+							WLog_Print(credssp->log, WLOG_DEBUG, "Sending Authentication Token\n%s", buffer);
+							free(buffer);
+							buffer = NULL;
+						}
 					}
 				}
 #endif
@@ -503,12 +505,14 @@ int credssp_client_authenticate(rdpCredssp* credssp)
 #ifdef WITH_DEBUG_CREDSSP
 		{
 			size_t buffer_size = -1;
-			char* buffer = NULL;
-			if (winpr_HexDumpToBuffer(&buffer, &buffer_size, (BYTE*)credssp->negoToken.pvBuffer, credssp->negoToken.cbBuffer))
-			{
-				WLog_Print(credssp->log, WLOG_DEBUG, "Receiving Authentication Token (%d)\n%s", (int) credssp->negoToken.cbBuffer, buffer);
-				free(buffer);
-				buffer = NULL;
+			if (winpr_HexDumpToBuffer(NULL, &buffer_size, (BYTE*)credssp->negoToken.pvBuffer, credssp->negoToken.cbBuffer)) {
+				char* buffer = (char*)calloc(buffer_size, sizeof(char));
+				if (buffer && winpr_HexDumpToBuffer(buffer, &buffer_size, (BYTE*)credssp->negoToken.pvBuffer, credssp->negoToken.cbBuffer))
+				{
+					WLog_Print(credssp->log, WLOG_DEBUG, "Receiving Authentication Token (%d)\n%s", (int)credssp->negoToken.cbBuffer, buffer);
+					free(buffer);
+					buffer = NULL;
+				}
 			}
 		}
 #endif
@@ -996,8 +1000,14 @@ SECURITY_STATUS credssp_decrypt_public_key_echo(rdpCredssp* credssp)
 			char* buffer1 = NULL;
 			char* buffer2 = NULL;
 
-			winpr_HexDumpToBuffer(&buffer1, &buffer_size1, public_key1, public_key_length);
-			winpr_HexDumpToBuffer(&buffer2, &buffer_size2, public_key2, Buffers[1].cbBuffer);
+			if (winpr_HexDumpToBuffer(NULL, &buffer_size1, public_key1, public_key_length)) {
+				buffer1 = (char*)calloc(buffer_size1, sizeof(char));
+				winpr_HexDumpToBuffer(buffer1, &buffer_size1, public_key1, public_key_length);
+			}
+			if (winpr_HexDumpToBuffer(NULL, &buffer_size2, public_key2, Buffers[1].cbBuffer)) {
+				buffer2 = (char*)calloc(buffer_size2, sizeof(char));
+				winpr_HexDumpToBuffer(buffer2, &buffer_size2, public_key2, Buffers[1].cbBuffer);
+			}
 
 			if (buffer1 && buffer2)
 			{
@@ -1654,14 +1664,17 @@ int credssp_recv(rdpCredssp* credssp)
 		!ber_read_contextual_tag(s, 0, &length, TRUE) ||
 		!ber_read_integer(s, &version))
 	{
-		char* buffer = NULL;
 		size_t buffer_size = -1;
 
-		if (winpr_HexDumpToBuffer(&buffer, &buffer_size, Stream_Buffer(s), (int)Stream_Length(s)))
+		if (winpr_HexDumpToBuffer(NULL, &buffer_size, Stream_Buffer(s), (int)Stream_Length(s)))
 		{
-			WLog_Print(credssp->log, WLOG_ERROR, "Invalid TSRequest message\n%s", buffer);
-			free(buffer);
-			buffer = NULL;
+			char* buffer = (char*)calloc(buffer_size, sizeof(char));
+			if (buffer && winpr_HexDumpToBuffer(buffer, &buffer_size, Stream_Buffer(s), (int)Stream_Length(s)))
+				WLog_Print(credssp->log, WLOG_ERROR, "Invalid TSRequest message\n%s", buffer);
+			if (buffer) {
+				free(buffer);
+				buffer = NULL;
+			}
 		}
 
 		Stream_Free(s, TRUE);
@@ -1677,14 +1690,17 @@ int credssp_recv(rdpCredssp* credssp)
 			!ber_read_octet_string_tag(s, &length) || /* OCTET STRING */
 			((int) Stream_GetRemainingLength(s)) < length)
 		{
-			char* buffer = NULL;
 			size_t buffer_size = -1;
 
-			if (winpr_HexDumpToBuffer(&buffer, &buffer_size, Stream_Buffer(s), (int)Stream_Length(s)))
+			if (winpr_HexDumpToBuffer(NULL, &buffer_size, Stream_Buffer(s), (int)Stream_Length(s)))
 			{
-				WLog_Print(credssp->log, WLOG_ERROR, "Invalid TSRequest message.  Failed to parse NegoData.\n%s", buffer);
-				free(buffer);
-				buffer = NULL;
+				char* buffer = (char*)calloc(buffer_size, sizeof(char));
+				if (buffer) {
+					winpr_HexDumpToBuffer(buffer, &buffer_size, Stream_Buffer(s), (int)Stream_Length(s));
+					WLog_Print(credssp->log, WLOG_ERROR, "Invalid TSRequest message.  Failed to parse NegoData.\n%s", buffer);
+					free(buffer);
+					buffer = NULL;
+				}
 			}
 			else
 			{
@@ -1705,14 +1721,16 @@ int credssp_recv(rdpCredssp* credssp)
 		if (!ber_read_octet_string_tag(s, &length) || /* OCTET STRING */
 			((int) Stream_GetRemainingLength(s)) < length)
 		{
-			char *buffer = NULL;
-			size_t buffer_size = -1;
+			size_t buffer_size = 0;
 
-			if (winpr_HexDumpToBuffer(&buffer, &buffer_size, Stream_Buffer(s), (int)Stream_Length(s)))
-			{
-				WLog_Print(credssp->log, WLOG_ERROR, "Invalid TSRequest message. Failed to parse authInfo.\n%s", buffer);
-				free(buffer);
-				buffer = NULL;
+			if (winpr_HexDumpToBuffer(NULL, &buffer_size, Stream_Buffer(s), (int)Stream_Length(s))) {
+				char *buffer = (char*)calloc(buffer_size, sizeof(char));
+				if (buffer) {
+					if (winpr_HexDumpToBuffer(buffer, &buffer_size, Stream_Buffer(s), (int)Stream_Length(s)))
+						WLog_Print(credssp->log, WLOG_ERROR, "Invalid TSRequest message. Failed to parse authInfo.\n%s", buffer);
+					free(buffer);
+					buffer = NULL;
+				}
 			}
 			else
 			{
@@ -1733,14 +1751,16 @@ int credssp_recv(rdpCredssp* credssp)
 		if (!ber_read_octet_string_tag(s, &length) || /* OCTET STRING */
 			((int) Stream_GetRemainingLength(s)) < length)
 		{
-			char *buffer = NULL;
-			size_t buffer_size = -1;
+			size_t buffer_size = 0;
 
-			if (winpr_HexDumpToBuffer(&buffer, &buffer_size, Stream_Buffer(s), (int)Stream_Length(s)))
-			{
-				WLog_Print(credssp->log, WLOG_ERROR, "Invalid TSRequest message. Failed to parse authInfo.\n%s", buffer);
-				free(buffer);
-				buffer = NULL;
+			if (winpr_HexDumpToBuffer(NULL, &buffer_size, Stream_Buffer(s), (int)Stream_Length(s))) {
+				char* buffer = (char*)calloc(buffer_size, sizeof(char));
+				if (buffer) {
+					if (winpr_HexDumpToBuffer(buffer, &buffer_size, Stream_Buffer(s), (int)Stream_Length(s)))
+						WLog_Print(credssp->log, WLOG_ERROR, "Invalid TSRequest message. Failed to parse authInfo.\n%s", buffer);
+					free(buffer);
+					buffer = NULL;
+				}
 			}
 			else
 			{
@@ -1781,23 +1801,26 @@ void credssp_buffer_print(rdpCredssp* credssp)
 	size_t buffer_size = 0;
 	size_t max_size = maximum(credssp->negoToken.cbBuffer, credssp->pubKeyAuth.cbBuffer, credssp->authInfo.cbBuffer);
 
-	winpr_HexDumpToBuffer(&buffer, &buffer_size, NULL, max_size);
-	buffer = (char*)malloc(buffer_size);
+	if (winpr_HexDumpToBuffer(NULL, &buffer_size, NULL, max_size)) {
+			buffer = (char*)calloc(buffer_size, sizeof(char));
+			if (NULL == buffer)
+				return;
+	}
 
 	if (credssp->negoToken.cbBuffer > 0 &&
-		winpr_HexDumpToBuffer(&buffer, &buffer_size, (BYTE*)credssp->negoToken.pvBuffer, credssp->negoToken.cbBuffer))
+		winpr_HexDumpToBuffer(buffer, &buffer_size, (BYTE*)credssp->negoToken.pvBuffer, credssp->negoToken.cbBuffer))
 	{
 		WLog_Print(credssp->log, WLOG_DEBUG, "CredSSP.negoToken (length = %d):\n%s", (int) credssp->negoToken.cbBuffer, buffer);
 	}
 
 	if (credssp->pubKeyAuth.cbBuffer > 0 &&
-		winpr_HexDumpToBuffer(&buffer, &buffer_size, (BYTE*)credssp->pubKeyAuth.pvBuffer, credssp->pubKeyAuth.cbBuffer))
+		winpr_HexDumpToBuffer(buffer, &buffer_size, (BYTE*)credssp->pubKeyAuth.pvBuffer, credssp->pubKeyAuth.cbBuffer))
 	{
 		WLog_Print(credssp->log, WLOG_DEBUG, "CredSSP.pubKeyAuth (length = %d):\n%s", (int)credssp->pubKeyAuth.cbBuffer, buffer);
 	}
 
 	if (credssp->authInfo.cbBuffer > 0 &&
-		winpr_HexDumpToBuffer(&buffer, &buffer_size, (BYTE*)credssp->authInfo.pvBuffer, credssp->authInfo.cbBuffer))
+		winpr_HexDumpToBuffer(buffer, &buffer_size, (BYTE*)credssp->authInfo.pvBuffer, credssp->authInfo.cbBuffer))
 	{
 		WLog_Print(credssp->log, WLOG_DEBUG, "CredSSP.authInfo (length = %d):\n%s", (int)credssp->authInfo.cbBuffer, buffer);
 	}
