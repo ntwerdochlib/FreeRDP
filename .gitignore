@@ -71,6 +71,7 @@ Release-*
 *.vcxproj.*
 *.vcproj
 *.vcproj.*
+*.aps
 *.sdf
 *.sln
 *.suo
@@ -112,6 +113,7 @@ Release
 Win32
 build*/
 *.orig
+*.msrcIncident
 
 default.log
 *Amplifier XE*
@@ -121,3 +123,6 @@ default.log
 *.txt.user
 
 *.autosave
+
+# etags
+TAGS

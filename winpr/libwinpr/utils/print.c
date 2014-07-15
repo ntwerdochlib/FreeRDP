@@ -30,7 +30,7 @@
 
 #include "trio.h"
 
-int winpr_HexDumpToBuffer(char** buffer, size_t* count, BYTE* data, int length)
+int winpr_HexDumpToBuffer(char** buffer, size_t* count, const BYTE* data, int length)
 {
 	size_t size = *count;
 	BYTE* p = data;
@@ -99,9 +99,9 @@ void winpr_HexDumpf(BYTE* data, int length, const char* format, ...)
 	winpr_HexDump(data, length);
 }
 
-void winpr_HexDump(BYTE* data, int length)
+void winpr_HexDump(const BYTE* data, int length)
 {
-	BYTE* p = data;
+	const BYTE* p = data;
 	int i, line, offset = 0;
 
 	while (offset < length)
@@ -130,9 +130,9 @@ void winpr_HexDump(BYTE* data, int length)
 	fflush(stderr);
 }
 
-void winpr_CArrayDump(BYTE* data, int length, int width)
+void winpr_CArrayDump(const BYTE* data, int length, int width)
 {
-	BYTE* p = data;
+	const BYTE* p = data;
 	int i, line, offset = 0;
 
 	while (offset < length)
@@ -156,7 +156,7 @@ void winpr_CArrayDump(BYTE* data, int length, int width)
 	printf("\n");
 }
 
-char* winpr_BinToHexString(BYTE* data, int length, BOOL space)
+char* winpr_BinToHexString(const BYTE* data, int length, BOOL space)
 {
 	int i;
 	int n;

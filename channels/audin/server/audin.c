@@ -77,9 +77,11 @@ static void audin_server_select_format(audin_server_context* context, int client
 
 static void audin_server_send_version(audin_server* audin, wStream* s)
 {
+	ULONG written;
+
 	Stream_Write_UINT8(s, MSG_SNDIN_VERSION);
 	Stream_Write_UINT32(s, 1); /* Version (4 bytes) */
-	WTSVirtualChannelWrite(audin->audin_channel, (PCHAR) Stream_Buffer(s), Stream_GetPosition(s), NULL);
+	WTSVirtualChannelWrite(audin->audin_channel, (PCHAR) Stream_Buffer(s), Stream_GetPosition(s), &written);
 }
 
 static BOOL audin_server_recv_version(audin_server* audin, wStream* s, UINT32 length)
@@ -101,6 +103,7 @@ static void audin_server_send_formats(audin_server* audin, wStream* s)
 {
 	int i;
 	UINT32 nAvgBytesPerSec;
+	ULONG written;
 
 	Stream_SetPosition(s, 0);
 	Stream_Write_UINT8(s, MSG_SNDIN_FORMATS);
@@ -131,7 +134,7 @@ static void audin_server_send_formats(audin_server* audin, wStream* s)
 		}
 	}
 
-	WTSVirtualChannelWrite(audin->audin_channel, (PCHAR) Stream_Buffer(s), Stream_GetPosition(s), NULL);
+	WTSVirtualChannelWrite(audin->audin_channel, (PCHAR) Stream_Buffer(s), Stream_GetPosition(s), &written);
 }
 
 static BOOL audin_server_recv_formats(audin_server* audin, wStream* s, UINT32 length)
@@ -181,6 +184,8 @@ static BOOL audin_server_recv_formats(audin_server* audin, wStream* s, UINT32 le
 
 static void audin_server_send_open(audin_server* audin, wStream* s)
 {
+	ULONG written;
+
 	if (audin->context.selected_client_format < 0)
 		return;
 
@@ -203,7 +208,7 @@ static void audin_server_send_open(audin_server* audin, wStream* s)
 	Stream_Write_UINT16(s, 16); /* wBitsPerSample */
 	Stream_Write_UINT16(s, 0); /* cbSize */
 
-	WTSVirtualChannelWrite(audin->audin_channel, (PCHAR) Stream_Buffer(s), Stream_GetPosition(s), NULL);
+	WTSVirtualChannelWrite(audin->audin_channel, (PCHAR) Stream_Buffer(s), Stream_GetPosition(s), &written);
 }
 
 static BOOL audin_server_recv_open_reply(audin_server* audin, wStream* s, UINT32 length)
@@ -280,7 +285,6 @@ static BOOL audin_server_recv_data(audin_server* audin, wStream* s, UINT32 lengt
 
 static void* audin_server_thread_func(void* arg)
 {
-	void* fd;
 	wStream* s;
 	void* buffer;
 	DWORD nCount;
@@ -326,6 +330,8 @@ static void* audin_server_thread_func(void* arg)
 	}
 
 	s = Stream_New(NULL, 4096);
+	if (!s)
+		goto out;
 
 	if (ready)
 	{
@@ -339,23 +345,15 @@ static void* audin_server_thread_func(void* arg)
 
 		Stream_SetPosition(s, 0);
 
+		WTSVirtualChannelRead(audin->audin_channel, 0, NULL, 0, &BytesReturned);
+		if (BytesReturned < 1)
+			continue;
+		Stream_EnsureRemainingCapacity(s, BytesReturned);
 		if (WTSVirtualChannelRead(audin->audin_channel, 0, (PCHAR) Stream_Buffer(s),
 			Stream_Capacity(s), &BytesReturned) == FALSE)
 		{
-			if (BytesReturned == 0)
-				break;
-			
-			Stream_EnsureRemainingCapacity(s, BytesReturned);
-
-			if (WTSVirtualChannelRead(audin->audin_channel, 0, (PCHAR) Stream_Buffer(s),
-				Stream_Capacity(s), &BytesReturned) == FALSE)
-			{
-				break;
-			}
+			break;
 		}
-
-		if (BytesReturned < 1)
-			continue;
 
 		Stream_Read_UINT8(s, MessageId);
 		BytesReturned--;
@@ -393,6 +391,8 @@ static void* audin_server_thread_func(void* arg)
 	}
 
 	Stream_Free(s, TRUE);
+
+out:
 	WTSVirtualChannelClose(audin->audin_channel);
 	audin->audin_channel = NULL;
 
@@ -463,7 +463,7 @@ audin_server_context* audin_server_context_new(HANDLE vcm)
 {
 	audin_server* audin;
 
-	audin = (audin_server*) calloc(1, sizeof(audin_server));
+	audin = (audin_server *)calloc(1, sizeof(audin_server));
 
 	audin->context.vcm = vcm;
 	audin->context.selected_client_format = -1;

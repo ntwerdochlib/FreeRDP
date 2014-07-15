@@ -287,8 +287,17 @@ out_smartc_name_error:
 				goto out_serial_path_error;
 		}
 
+		if (serial->Driver)
+		{
+			_serial->Driver = _strdup(serial->Driver);
+			if (!_serial->Driver)
+				goto out_serial_driver_error;
+		}
+
 		return (RDPDR_DEVICE*) _serial;
 
+out_serial_driver_error:
+		free(_serial->Path);
 out_serial_path_error:
 		free(_serial->Name);
 out_serial_name_error:
@@ -360,6 +369,7 @@ void freerdp_device_collection_free(rdpSettings* settings)
 		else if (settings->DeviceArray[index]->Type == RDPDR_DTYP_SERIAL)
 		{
 			free(((RDPDR_SERIAL*) device)->Path);
+			free(((RDPDR_SERIAL*) device)->Driver);
 		}
 		else if (settings->DeviceArray[index]->Type == RDPDR_DTYP_PARALLEL)
 		{
@@ -517,11 +527,16 @@ out_free:
 
 void freerdp_dynamic_channel_collection_free(rdpSettings* settings)
 {
-	UINT32 index;
+	int j;
+	UINT32 i;
 
-	for (index = 0; index < settings->DynamicChannelCount; index++)
+	for (i = 0; i < settings->DynamicChannelCount; i++)
 	{
-		free(settings->DynamicChannelArray[index]);
+		for (j = 0; j < settings->DynamicChannelArray[i]->argc; j++)
+			free(settings->DynamicChannelArray[i]->argv[j]);
+
+		free(settings->DynamicChannelArray[i]->argv);
+		free(settings->DynamicChannelArray[i]);
 	}
 
 	free(settings->DynamicChannelArray);
@@ -616,6 +631,20 @@ void freerdp_set_gateway_usage_method(rdpSettings* settings, UINT32 GatewayUsage
 		freerdp_set_param_bool(settings, FreeRDP_GatewayEnabled, FALSE);
 		freerdp_set_param_bool(settings, FreeRDP_GatewayBypassLocal, FALSE);
 	}
+}
+
+void freerdp_update_gateway_usage_method(rdpSettings* settings, UINT32 GatewayEnabled, UINT32 GatewayBypassLocal)
+{
+	UINT32 GatewayUsageMethod = 0;
+
+	if (!GatewayEnabled && !GatewayBypassLocal)
+		GatewayUsageMethod = TSC_PROXY_MODE_NONE_DIRECT;
+	else if (GatewayEnabled && !GatewayBypassLocal)
+		GatewayUsageMethod = TSC_PROXY_MODE_DIRECT;
+	else if (GatewayEnabled && GatewayBypassLocal)
+		GatewayUsageMethod = TSC_PROXY_MODE_DETECT;
+
+	freerdp_set_gateway_usage_method(settings, GatewayUsageMethod);
 }
 
 /**
@@ -790,6 +819,10 @@ BOOL freerdp_get_param_bool(rdpSettings* settings, int id)
 			return settings->AllowDesktopComposition;
 			break;
 
+		case FreeRDP_RemoteAssistanceMode:
+			return settings->RemoteAssistanceMode;
+			break;
+
 		case FreeRDP_TlsSecurity:
 			return settings->TlsSecurity;
 			break;
@@ -820,6 +853,10 @@ BOOL freerdp_get_param_bool(rdpSettings* settings, int id)
 
 		case FreeRDP_DisableCredentialsDelegation:
 			return settings->DisableCredentialsDelegation;
+			break;
+
+		case FreeRDP_AuthenticationLevel:
+			return settings->AuthenticationLevel;
 			break;
 
 		case FreeRDP_MstscCookieMode:
@@ -872,6 +909,10 @@ BOOL freerdp_get_param_bool(rdpSettings* settings, int id)
 
 		case FreeRDP_AsyncChannels:
 			return settings->AsyncChannels;
+			break;
+
+		case FreeRDP_AsyncTransport:
+			return settings->AsyncTransport;
 			break;
 
 		case FreeRDP_ToggleFullscreen:
@@ -1046,6 +1087,26 @@ BOOL freerdp_get_param_bool(rdpSettings* settings, int id)
 			return settings->JpegCodec;
 			break;
 
+		case FreeRDP_GfxThinClient:
+			return settings->GfxThinClient;
+			break;
+
+		case FreeRDP_GfxSmallCache:
+			return settings->GfxSmallCache;
+			break;
+
+		case FreeRDP_GfxProgressive:
+			return settings->GfxProgressive;
+			break;
+
+		case FreeRDP_GfxProgressiveV2:
+			return settings->GfxProgressiveV2;
+			break;
+
+		case FreeRDP_GfxH264:
+			return settings->GfxH264;
+			break;
+
 		case FreeRDP_DrawNineGridEnabled:
 			return settings->DrawNineGridEnabled;
 			break;
@@ -1091,6 +1152,7 @@ BOOL freerdp_get_param_bool(rdpSettings* settings, int id)
 			break;
 
 		default:
+			fprintf(stderr, "freerdp_get_param_bool: unknown id: %d\n", id);
 			return -1;
 			break;
 	}
@@ -1266,6 +1328,10 @@ int freerdp_set_param_bool(rdpSettings* settings, int id, BOOL param)
 			settings->AllowDesktopComposition = param;
 			break;
 
+		case FreeRDP_RemoteAssistanceMode:
+			settings->RemoteAssistanceMode = param;
+			break;
+
 		case FreeRDP_TlsSecurity:
 			settings->TlsSecurity = param;
 			break;
@@ -1296,6 +1362,10 @@ int freerdp_set_param_bool(rdpSettings* settings, int id, BOOL param)
 
 		case FreeRDP_DisableCredentialsDelegation:
 			settings->DisableCredentialsDelegation = param;
+			break;
+
+		case FreeRDP_AuthenticationLevel:
+			settings->AuthenticationLevel = param;
 			break;
 
 		case FreeRDP_MstscCookieMode:
@@ -1348,6 +1418,10 @@ int freerdp_set_param_bool(rdpSettings* settings, int id, BOOL param)
 
 		case FreeRDP_AsyncChannels:
 			settings->AsyncChannels = param;
+			break;
+
+		case FreeRDP_AsyncTransport:
+			settings->AsyncTransport = param;
 			break;
 
 		case FreeRDP_ToggleFullscreen:
@@ -1522,6 +1596,26 @@ int freerdp_set_param_bool(rdpSettings* settings, int id, BOOL param)
 			settings->JpegCodec = param;
 			break;
 
+		case FreeRDP_GfxThinClient:
+			settings->GfxThinClient = param;
+			break;
+
+		case FreeRDP_GfxSmallCache:
+			settings->GfxSmallCache = param;
+			break;
+
+		case FreeRDP_GfxProgressive:
+			settings->GfxProgressive = param;
+			break;
+
+		case FreeRDP_GfxProgressiveV2:
+			settings->GfxProgressiveV2 = param;
+			break;
+
+		case FreeRDP_GfxH264:
+			settings->GfxH264 = param;
+			break;
+
 		case FreeRDP_DrawNineGridEnabled:
 			settings->DrawNineGridEnabled = param;
 			break;
@@ -1567,6 +1661,7 @@ int freerdp_set_param_bool(rdpSettings* settings, int id, BOOL param)
 			break;
 
 		default:
+			fprintf(stderr, "freerdp_set_param_bool: unknown id %d (param = %d)\n", id, param);
 			return -1;
 			break;
 	}
@@ -1590,6 +1685,7 @@ int freerdp_get_param_int(rdpSettings* settings, int id)
 			break;
 
 		default:
+			fprintf(stderr, "freerdp_get_param_int: unknown id: %d\n", id);
 			return 0;
 			break;
 	}
@@ -1610,6 +1706,7 @@ int freerdp_set_param_int(rdpSettings* settings, int id, int param)
 			break;
 
 		default:
+			fprintf(stderr, "freerdp_set_param_int: unknown id %d (param = %d)\n", id, param);
 			return -1;
 			break;
 	}
@@ -1920,6 +2017,7 @@ UINT32 freerdp_get_param_uint32(rdpSettings* settings, int id)
 			break;
 
 		default:
+			fprintf(stderr, "freerdp_get_param_uint32: unknown id: %d\n", id);
 			return 0;
 			break;
 	}
@@ -2228,6 +2326,7 @@ int freerdp_set_param_uint32(rdpSettings* settings, int id, UINT32 param)
 			break;
 
 		default:
+			fprintf(stderr, "freerdp_set_param_uint32: unknown id %d (param = %u)\n", id, param);
 			return -1;
 			break;
 	}
@@ -2247,6 +2346,7 @@ UINT64 freerdp_get_param_uint64(rdpSettings* settings, int id)
 			break;
 
 		default:
+			fprintf(stderr, "freerdp_get_param_uint64: unknown id: %d\n", id);
 			return -1;
 			break;
 	}
@@ -2263,6 +2363,7 @@ int freerdp_set_param_uint64(rdpSettings* settings, int id, UINT64 param)
 			break;
 
 		default:
+			fprintf(stderr, "freerdp_set_param_uint64: unknown id %d (param = %u)\n", id, (UINT32) param);
 			return -1;
 			break;
 	}
@@ -2325,6 +2426,22 @@ char* freerdp_get_param_string(rdpSettings* settings, int id)
 			return settings->DynamicDSTTimeZoneKeyName;
 			break;
 
+		case FreeRDP_RemoteAssistanceSessionId:
+			return settings->RemoteAssistanceSessionId;
+			break;
+
+		case FreeRDP_RemoteAssistancePassStub:
+			return settings->RemoteAssistancePassStub;
+			break;
+
+		case FreeRDP_RemoteAssistancePassword:
+			return settings->RemoteAssistancePassword;
+			break;
+
+		case FreeRDP_RemoteAssistanceRCTicket:
+			return settings->RemoteAssistanceRCTicket;
+			break;
+
 		case FreeRDP_AuthenticationServiceClass:
 			return settings->AuthenticationServiceClass;
 			break;
@@ -2367,6 +2484,10 @@ char* freerdp_get_param_string(rdpSettings* settings, int id)
 
 		case FreeRDP_ConnectionFile:
 			return settings->ConnectionFile;
+			break;
+
+		case FreeRDP_AssistanceFile:
+			return settings->AssistanceFile;
 			break;
 
 		case FreeRDP_HomePath:
@@ -2438,6 +2559,7 @@ char* freerdp_get_param_string(rdpSettings* settings, int id)
 			break;
 
 		default:
+			fprintf(stderr, "freerdp_get_param_string: unknown id: %d\n", id);
 			return NULL;
 			break;
 	}
@@ -2509,6 +2631,26 @@ int freerdp_set_param_string(rdpSettings* settings, int id, const char* param)
 			settings->DynamicDSTTimeZoneKeyName = _strdup(param);
 			break;
 
+		case FreeRDP_RemoteAssistanceSessionId:
+			free(settings->RemoteAssistanceSessionId);
+			settings->RemoteAssistanceSessionId = _strdup(param);
+			break;
+
+		case FreeRDP_RemoteAssistancePassStub:
+			free(settings->RemoteAssistancePassStub);
+			settings->RemoteAssistancePassStub = _strdup(param);
+			break;
+
+		case FreeRDP_RemoteAssistancePassword:
+			free(settings->RemoteAssistancePassword);
+			settings->RemoteAssistancePassword = _strdup(param);
+			break;
+
+		case FreeRDP_RemoteAssistanceRCTicket:
+			free(settings->RemoteAssistanceRCTicket);
+			settings->RemoteAssistanceRCTicket = _strdup(param);
+			break;
+
 		case FreeRDP_AuthenticationServiceClass:
 			free(settings->AuthenticationServiceClass);
 			settings->AuthenticationServiceClass = _strdup(param);
@@ -2562,6 +2704,11 @@ int freerdp_set_param_string(rdpSettings* settings, int id, const char* param)
 		case FreeRDP_ConnectionFile:
 			free(settings->ConnectionFile);
 			settings->ConnectionFile = _strdup(param);
+			break;
+
+		case FreeRDP_AssistanceFile:
+			free(settings->AssistanceFile);
+			settings->AssistanceFile = _strdup(param);
 			break;
 
 		case FreeRDP_HomePath:
@@ -2650,6 +2797,7 @@ int freerdp_set_param_string(rdpSettings* settings, int id, const char* param)
 			break;
 
 		default:
+			fprintf(stderr, "freerdp_set_param_string: unknown id %d (param = %s)\n", id, param);
 			return -1;
 			break;
 	}
@@ -2669,6 +2817,7 @@ double freerdp_get_param_double(rdpSettings* settings, int id)
 			break;
 
 		default:
+			fprintf(stderr, "freerdp_get_param_double: unknown id: %d\n", id);
 			return 0;
 			break;
 	}

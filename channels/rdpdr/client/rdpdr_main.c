@@ -65,8 +65,8 @@ static void rdpdr_send_device_list_announce_request(rdpdrPlugin* rdpdr, BOOL use
 
 static void rdpdr_send_device_list_remove_request(rdpdrPlugin* rdpdr, UINT32 count, UINT32 ids[])
 {
+	UINT32 i;
 	wStream* s;
-	int i;
 
 	s = Stream_New(NULL, 256);
 
@@ -307,6 +307,7 @@ static char* get_word(char* str, unsigned int* offset)
 {
 	char* p;
 	char* tmp;
+	char* word;
 	int wlen;
 
 	if (*offset >= strlen(str))
@@ -325,7 +326,15 @@ static char* get_word(char* str, unsigned int* offset)
 	while (*(str + *offset) == ' ')
 		(*offset)++;
 
-	return strndup(p, wlen);
+	word = malloc(wlen + 1);
+	
+	if (word != NULL)
+	{
+		CopyMemory(word, p, wlen);
+		word[wlen] = '\0';
+	}
+	
+	return word;
 }
 
 static void handle_hotplug(rdpdrPlugin* rdpdr)
@@ -451,6 +460,8 @@ static void* drive_hotplug_thread_func(void* arg)
 	tv.tv_sec = 1;
 	tv.tv_usec = 0;
 
+	handle_hotplug(rdpdr);
+
 	while ((rv = select(mfd+1, NULL, NULL, &rfds, &tv)) >= 0)
 	{
 		if (WaitForSingleObject(rdpdr->stopEvent, 0) == WAIT_OBJECT_0)
@@ -517,6 +528,8 @@ static void rdpdr_process_server_announce_request(rdpdrPlugin* rdpdr, wStream* s
 	Stream_Read_UINT16(s, rdpdr->versionMajor);
 	Stream_Read_UINT16(s, rdpdr->versionMinor);
 	Stream_Read_UINT32(s, rdpdr->clientID);
+
+	rdpdr->sequenceId++;
 }
 
 static void rdpdr_send_client_announce_reply(rdpdrPlugin* rdpdr)
@@ -1033,6 +1046,8 @@ BOOL VCAPITYPE VirtualChannelEntry(PCHANNEL_ENTRY_POINTS pEntryPoints)
 			CHANNEL_OPTION_COMPRESS_RDP;
 
 	strcpy(rdpdr->channelDef.name, "rdpdr");
+
+	rdpdr->sequenceId = 0;
 
 	CopyMemory(&(rdpdr->channelEntryPoints), pEntryPoints, sizeof(CHANNEL_ENTRY_POINTS_FREERDP));
 

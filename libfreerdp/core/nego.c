@@ -220,18 +220,18 @@ BOOL nego_tcp_connect(rdpNego* nego)
 			{
 				/* Attempt a direct connection first, and then fallback to using the gateway */
 				transport_set_gateway_enabled(nego->transport, FALSE);
-				nego->tcp_connected = transport_connect(nego->transport, nego->hostname, nego->port);
+				nego->tcp_connected = transport_connect(nego->transport, nego->hostname, nego->port, 1);
 			}
 
 			if (!nego->tcp_connected)
 			{
 				transport_set_gateway_enabled(nego->transport, TRUE);
-				nego->tcp_connected = transport_connect(nego->transport, nego->hostname, nego->port);
+				nego->tcp_connected = transport_connect(nego->transport, nego->hostname, nego->port, 15);
 			}
 		}
 		else
 		{
-			nego->tcp_connected = transport_connect(nego->transport, nego->hostname, nego->port);
+			nego->tcp_connected = transport_connect(nego->transport, nego->hostname, nego->port, 15);
 		}
 	}
 
@@ -708,9 +708,19 @@ BOOL nego_send_negotiation_request(rdpNego* nego)
 	if (nego->RoutingToken)
 	{
 		Stream_Write(s, nego->RoutingToken, nego->RoutingTokenLength);
-		Stream_Write_UINT8(s, 0x0D); /* CR */
-		Stream_Write_UINT8(s, 0x0A); /* LF */
-		length += nego->RoutingTokenLength + 2;
+		/* Ensure Routing Token is correctly terminated - may already be present in string */
+		if (nego->RoutingTokenLength>2 && (nego->RoutingToken[nego->RoutingTokenLength-2]==0x0D && nego->RoutingToken[nego->RoutingTokenLength-1]==0x0A))
+		{
+			DEBUG_NEGO("Routing token looks correctly terminated - use verbatim");
+			length +=nego->RoutingTokenLength;
+		}
+		else
+		{
+			DEBUG_NEGO("Adding terminating CRLF to routing token");
+			Stream_Write_UINT8(s, 0x0D); /* CR */
+			Stream_Write_UINT8(s, 0x0A); /* LF */
+			length += nego->RoutingTokenLength + 2;
+		}
 	}
 	else if (nego->cookie)
 	{

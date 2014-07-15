@@ -38,6 +38,12 @@ static int update_recv_surfcmd_surface_bits(rdpUpdate* update, wStream* s, UINT3
 	Stream_Read_UINT16(s, cmd->destRight);
 	Stream_Read_UINT16(s, cmd->destBottom);
 	Stream_Read_UINT8(s, cmd->bpp);
+	if ((cmd->bpp < 1) || (cmd->bpp > 32))
+	{
+		fprintf(stderr, "%s: invalid bpp value %d", __FUNCTION__, cmd->bpp);
+		return FALSE;
+	}
+
 	Stream_Seek(s, 2); /* reserved1, reserved2 */
 	Stream_Read_UINT8(s, cmd->codecID);
 	Stream_Read_UINT16(s, cmd->width);
@@ -89,7 +95,7 @@ int update_recv_surfcmds(rdpUpdate* update, UINT32 size, wStream* s)
 {
 	BYTE* mark;
 	UINT16 cmdType;
-	UINT32 cmdLength;
+	UINT32 cmdLength = 0;
 
 	while (size > 2)
 	{

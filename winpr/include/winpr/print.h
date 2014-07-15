@@ -33,10 +33,10 @@
 extern "C" {
 #endif
 
-WINPR_API void winpr_HexDump(BYTE* data, int length);
-WINPR_API void winpr_CArrayDump(BYTE* data, int length, int width);
+WINPR_API void winpr_HexDump(const BYTE* data, int length);
+WINPR_API void winpr_CArrayDump(const BYTE* data, int length, int width);
 
-WINPR_API char* winpr_BinToHexString(BYTE* data, int length, BOOL space);
+WINPR_API char* winpr_BinToHexString(const BYTE* data, int length, BOOL space);
 WINPR_API void winpr_HexDumpf(BYTE* data, int length, const char* format, ...);
 WINPR_API int winpr_HexDumpToBuffer(char** buffer, size_t* count, BYTE* data, int length);
 
